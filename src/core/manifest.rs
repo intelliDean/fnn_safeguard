@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FileMetadata {
     pub sha256: String,
     pub size_bytes: u64,
@@ -95,4 +95,42 @@ pub fn hash_bytes(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(data);
     format!("sha256:{}", hex::encode(hasher.finalize()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_manifest_roundtrip_save_and_load() {
+        let temp = TempDir::new().unwrap();
+        let manifest = RecoveryManifest::new(
+            "03pubkey123",
+            "testnet",
+            "v0.9.0",
+            "commit123",
+            "rocksdb",
+            "sha256:config",
+            Some(5),
+            Some(10),
+        );
+
+        let path = manifest.save_to_dir(temp.path()).unwrap();
+        assert!(path.exists());
+
+        let loaded = RecoveryManifest::load_from_dir(temp.path()).unwrap();
+        assert_eq!(loaded.node_public_key, "03pubkey123");
+        assert_eq!(loaded.network, "testnet");
+        assert_eq!(loaded.channel_count, Some(5));
+    }
+
+    #[test]
+    fn test_hash_bytes() {
+        let data = b"hello fnn safeguard";
+        let h1 = hash_bytes(data);
+        let h2 = hash_bytes(data);
+        assert_eq!(h1, h2);
+        assert!(h1.starts_with("sha256:"));
+    }
 }
