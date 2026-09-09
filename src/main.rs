@@ -161,14 +161,14 @@ async fn main() -> Result<()> {
             .await?;
         }
         Commands::Drill(args) => {
-            commands::DrillCommand::run(
-                Some(args.backup),
-                Some(args.node_dir),
-                args.fnn_bin,
-                args.docker,
-                args.docker_image,
-                args.json,
-            )
+            commands::DrillCommand::run(commands::DrillOptions {
+                backup_path: Some(args.backup),
+                node_dir: Some(args.node_dir),
+                fnn_bin: args.fnn_bin,
+                use_docker: args.docker,
+                docker_image: args.docker_image,
+                json_output: args.json,
+            })
             .await?;
         }
     }
