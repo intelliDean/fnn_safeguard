@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
+use std::fs::metadata;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
@@ -94,7 +95,7 @@ impl BackupValidator {
         let ckb_key_path = dir.join("key");
         if !ckb_key_path.exists() {
             errors.push("Missing CKB key file ('key') in backup".to_string());
-        } else if let Ok(meta) = fs::metadata(&ckb_key_path) {
+        } else if let Ok(meta) = metadata(&ckb_key_path) {
             if meta.len() == 0 {
                 errors.push("CKB key file ('key') is empty (0 bytes)".to_string());
             }
@@ -116,7 +117,7 @@ impl BackupValidator {
             }
             ("rocksdb".to_string(), rocksdb_path)
         } else if sqlite_path.is_file() {
-            if let Ok(meta) = fs::metadata(&sqlite_path) {
+            if let Ok(meta) = metadata(&sqlite_path) {
                 if meta.len() == 0 {
                     errors.push("SQLite database file 'data.sqlite' is 0 bytes".to_string());
                 }

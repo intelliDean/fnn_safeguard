@@ -1,3 +1,5 @@
+use std::error::Error;
+use std::fmt::{Display, Formatter, Result as FmtResult};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,13 +36,13 @@ pub struct JsonRpcError {
     pub data: Option<serde_json::Value>,
 }
 
-impl std::fmt::Display for JsonRpcError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for JsonRpcError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "RPC Error (code {}): {}", self.code, self.message)
     }
 }
 
-impl std::error::Error for JsonRpcError {}
+impl Error for JsonRpcError {}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NodeInfoResult {

@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
+use std::fs::{read_to_string, File};
 use std::path::{Path, PathBuf};
+use serde_json::{from_str, to_string_pretty};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FileMetadata {
@@ -65,7 +67,7 @@ impl RecoveryManifest {
 
     pub fn save_to_dir(&self, dir: impl AsRef<Path>) -> Result<PathBuf> {
         let path = dir.as_ref().join("manifest.json");
-        let content = serde_json::to_string_pretty(self)
+        let content = to_string_pretty(self)
             .context("Failed to serialize recovery manifest to JSON")?;
         fs::write(&path, content)
             .with_context(|| format!("Failed to write manifest to {:?}", path))?;
@@ -74,16 +76,16 @@ impl RecoveryManifest {
 
     pub fn load_from_dir(dir: impl AsRef<Path>) -> Result<Self> {
         let path = dir.as_ref().join("manifest.json");
-        let content = fs::read_to_string(&path)
+        let content = read_to_string(&path)
             .with_context(|| format!("Failed to read manifest at {:?}", path))?;
-        let manifest: Self = serde_json::from_str(&content)
+        let manifest: Self = from_str(&content)
             .with_context(|| format!("Failed to parse recovery manifest {:?}", path))?;
         Ok(manifest)
     }
 }
 
 pub fn hash_file(path: impl AsRef<Path>) -> Result<String> {
-    let mut file = fs::File::open(path.as_ref())
+    let mut file = File::open(path.as_ref())
         .with_context(|| format!("Failed to open file for hashing: {:?}", path.as_ref()))?;
     let mut hasher = Sha256::new();
     std::io::copy(&mut file, &mut hasher)

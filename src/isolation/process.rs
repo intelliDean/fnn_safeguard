@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
 use std::fs;
+use std::fs::{copy, create_dir_all};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
@@ -153,18 +154,18 @@ impl ProcessIsolationSandbox {
     ) -> Result<()> {
         let backup_sk = backup_dir.join("sk");
         let backup_key = backup_dir.join("key");
-        fs::copy(&backup_sk, restored_fiber.join("sk"))?;
-        fs::copy(&backup_key, restored_ckb.join("key"))?;
+        copy(&backup_sk, restored_fiber.join("sk"))?;
+        copy(&backup_key, restored_ckb.join("key"))?;
 
         let target_db = restored_fiber.join("store");
-        fs::create_dir_all(&target_db)?;
+        create_dir_all(&target_db)?;
 
         if database_type == "rocksdb" {
             let backup_db = backup_dir.join("db");
             copy_dir_all(&backup_db, &target_db)?;
         } else if database_type == "sqlite" {
             let backup_db = backup_dir.join("data.sqlite");
-            fs::copy(&backup_db, target_db.join("data.sqlite"))?;
+            copy(&backup_db, target_db.join("data.sqlite"))?;
         }
 
         Ok(())

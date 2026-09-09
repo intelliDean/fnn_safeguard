@@ -1,5 +1,7 @@
+use std::fmt::Display;
 use colored::{ColoredString, Colorize};
 use serde::Serialize;
+use serde_json::to_string_pretty;
 
 pub enum CheckStatus {
     Pass,
@@ -38,7 +40,7 @@ impl TerminalReporter {
         println!("\n{}", format!("[ {} ]", name).bold().blue());
     }
 
-    pub fn row(label: &str, value: impl std::fmt::Display) {
+    pub fn row(label: &str, value: impl Display) {
         println!("{:<28} {}", label.dimmed(), value);
     }
 
@@ -61,7 +63,7 @@ impl TerminalReporter {
     }
 
     pub fn print_json<T: Serialize>(val: &T) {
-        if let Ok(json) = serde_json::to_string_pretty(val) {
+        if let Ok(json) = to_string_pretty(val) {
             println!("{}", json);
         }
     }

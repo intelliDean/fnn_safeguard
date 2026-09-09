@@ -1,7 +1,9 @@
+use std::fmt::{Debug, Result as FmtResult};
 use anyhow::{bail, Context, Result};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use std::fs;
 use std::path::Path;
+use std::os::unix::fs::PermissionsExt;
 
 #[derive(Clone)]
 pub struct IdentityKey {
@@ -9,8 +11,8 @@ pub struct IdentityKey {
     raw_len: usize,
 }
 
-impl std::fmt::Debug for IdentityKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Debug for IdentityKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> FmtResult {
         f.debug_struct("IdentityKey")
             .field("pubkey", &self.pubkey_hex)
             .field("bytes_len", &self.raw_len)
@@ -63,7 +65,7 @@ pub struct PermissionManager;
 impl PermissionManager {
     #[cfg(unix)]
     pub fn check_permission_mode(path: impl AsRef<Path>) -> Result<u32> {
-        use std::os::unix::fs::PermissionsExt;
+        use PermissionsExt;
         let meta = fs::metadata(path.as_ref())?;
         Ok(meta.permissions().mode() & 0o777)
     }
@@ -76,7 +78,7 @@ impl PermissionManager {
     /// Makes a key file writable prior to restore so std::fs::copy does not fail with EACCES.
     #[cfg(unix)]
     pub fn prepare_for_restore(path: impl AsRef<Path>) -> Result<()> {
-        use std::os::unix::fs::PermissionsExt;
+        use PermissionsExt;
         let path = path.as_ref();
         if path.exists() {
             let mut perms = fs::metadata(path)?.permissions();
@@ -95,7 +97,7 @@ impl PermissionManager {
     /// Hardens the identity key file back to read-only 0o400 after restore.
     #[cfg(unix)]
     pub fn harden_after_restore(path: impl AsRef<Path>) -> Result<()> {
-        use std::os::unix::fs::PermissionsExt;
+        use PermissionsExt;
         let path = path.as_ref();
         if path.exists() {
             let mut perms = fs::metadata(path)?.permissions();

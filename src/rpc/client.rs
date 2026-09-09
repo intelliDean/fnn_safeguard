@@ -1,9 +1,13 @@
-use anyhow::{bail, Context, Result};
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
-
 use super::types::*;
+use anyhow::{anyhow, bail, Context, Result};
+use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
+use reqwest::Client;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+use serde_json::Value;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 
 #[derive(Clone, Debug)]
 pub struct FnnRpcClient {
@@ -24,18 +28,13 @@ impl FnnRpcClient {
             headers.insert(AUTHORIZATION, auth_val);
         }
 
-        let client = reqwest::Client::builder()
+        let client = Client::builder()
             .default_headers(headers)
             .timeout(Duration::from_secs(15))
             .build()
             .context("Failed to construct HTTP client")?;
 
-        Ok(Self {
-            url: url.into(),
-            auth_token,
-            client,
-            request_id: std::sync::Arc::new(AtomicU64::new(1)),
-        })
+        Ok(Self { url: url.into(), auth_token, client, request_id: Arc::new(AtomicU64::new(1)) })
     }
 
     pub fn url(&self) -> &str {
@@ -46,7 +45,7 @@ impl FnnRpcClient {
         self.auth_token.is_some()
     }
 
-    async fn call_rpc<P: serde::Serialize, R: serde::de::DeserializeOwned>(
+    async fn call_rpc<P: Serialize, R: DeserializeOwned>(
         &self,
         method: &str,
         params: P,
@@ -63,24 +62,17 @@ impl FnnRpcClient {
             .with_context(|| format!("Failed to connect to FNN RPC at {}", self.url))?;
 
         if !resp.status().is_success() {
-            bail!(
-                "FNN RPC endpoint returned HTTP status {}",
-                resp.status().as_u16()
-            );
+            bail!("FNN RPC endpoint returned HTTP status {}", resp.status().as_u16());
         }
 
-        let rpc_res: JsonRpcResponse<R> = resp
-            .json()
-            .await
-            .context("Failed to parse JSON-RPC response from FNN")?;
+        let rpc_res: JsonRpcResponse<R> =
+            resp.json().await.context("Failed to parse JSON-RPC response from FNN")?;
 
         if let Some(err) = rpc_res.error {
             bail!("FNN RPC method '{}' error: {}", method, err);
         }
 
-        rpc_res
-            .result
-            .ok_or_else(|| anyhow::anyhow!("RPC response for '{}' contained null result", method))
+        rpc_res.result.ok_or_else(|| anyhow!("RPC response for '{}' contained null result", method))
     }
 
     pub async fn node_info(&self) -> Result<NodeInfoResult> {
@@ -104,7 +96,7 @@ impl FnnRpcClient {
     }
 
     pub async fn trigger_backup(&self) -> Result<()> {
-        let _: serde_json::Value = self.call_rpc("backup", ()).await?;
+        let _: Value = self.call_rpc("backup", ()).await?;
         Ok(())
     }
 }

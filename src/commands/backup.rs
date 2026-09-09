@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Context, Result, anyhow};
 use colored::Colorize;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -82,7 +82,7 @@ impl BackupCommand {
         } else {
             let base = node_dir.unwrap_or_else(|| Path::new("."));
             ConfigSanitizer::discover_latest_backup(base)
-                .ok_or_else(|| anyhow::anyhow!("No backup directory found in {:?}", base))?
+                .ok_or_else(|| anyhow!("No backup directory found in {:?}", base))?
         };
 
         if !dir.exists() {

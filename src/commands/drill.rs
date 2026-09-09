@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Context, Result, anyhow};
 use colored::Colorize;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -86,7 +86,7 @@ impl DrillCommand {
             Some("latest") | None => {
                 let base = node_dir.unwrap_or_else(|| Path::new("."));
                 ConfigSanitizer::discover_latest_backup(base).ok_or_else(|| {
-                    anyhow::anyhow!("No backup directory discovered in {:?}", base)
+                    anyhow!("No backup directory discovered in {:?}", base)
                 })?
             }
             Some(custom) => PathBuf::from(custom),
