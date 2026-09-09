@@ -1,0 +1,357 @@
+Project Details
+Project Name
+FNN Safeguard
+Project Title
+FNN Safeguard: Verified Recovery Points and Pre-Upgrade Qualification for Fiber Nodes
+One-Line Description
+FNN Safeguard is a self-hosted operator tool that verifies Fiber node backups, stores encrypted copies off-host, tests restores in an isolated environment, and checks a target FNN version against cloned node state before a live upgrade.
+
+Project Summary
+Fiber Network Node already supports online backups, restore procedures, and database migrations. However, the existence of a backup directory does not prove that the backup is complete, recoverable, stored away from the live disk, compatible with a target FNN version, or usable during a real recovery event.
+FNN Safeguard turns FNN’s existing backup capability into a verifiable operational workflow:
+Inspect node
+→ create or discover official FNN backup
+→ validate backup contents
+→ generate recovery manifest
+→ encrypt and replicate off-host
+→ restore inside an isolated environment
+→ verify identity and state
+→ qualify a target FNN release
+→ generate PASS / WARN / BLOCK report
+The tool is intended for operators running persistent or funded Fiber nodes, including public routing nodes, merchant nodes, CCH services, trampoline nodes, and development teams maintaining long-lived FNN deployments.
+It does not replace FNN’s backup implementation. It independently verifies whether a specific operator’s backup and upgrade path actually work.
+
+Problem Being Solved
+FNN v0.9.0 automatically creates online backups and can trigger an immediate backup through its admin RPC. A native backup contains the Fiber database checkpoint, encrypted CKB key, and Fiber node identity key. However, the configuration file and FIBER_SECRET_KEY_PASSWORD are not included, and backups are stored on the same disk as the live database unless an operator manually moves them elsewhere.
+The official recovery process also contains operational risk. The current documentation describes a manual permission workaround for restoring into an initialized v0.9.0 directory, and the current restore path directly copies the backed-up key files over the existing files.
+A backup may therefore exist without proving that:
+The database checkpoint is readable.
+Both required key files are present.
+The operator still has the required password.
+The configuration corresponds to the backup.
+The backup exists on another device or host.
+The restored node has the expected public identity.
+The target FNN version can open or migrate the database.
+Channel and payment records remain structurally consistent.
+The restored clone is prevented from joining the live Fiber network.
+A real restore problem has already been documented where an existing read-only Fiber identity file prevents fnn --restore from completing before the database and channel-recovery steps run.
+The operational gap is therefore:
+FNN creates backups, but operators still lack an independent system that proves a backup is usable and that a target release can safely process a clone of their node state before production deployment.
+
+Proposed Solution
+FNN Safeguard will provide a headless CLI and Docker-based isolation environment with five core capabilities.
+1. Node Inspection
+Command:
+fnn-safeguard inspect
+The command collects a non-secret inventory of the running node:
+FNN version and commit
+Network
+Node public key
+Storage backend and paths
+Configuration checksum
+Channel counts by state
+Payment and invoice record counts
+Latest backup timestamp
+Backup age
+Off-host replication status
+Last successful restore drill
+Last qualified FNN target version
+Example:
+Node public key:        03ab...91ef
+FNN version:            v0.9.0
+Network:                mainnet
+Ready channels:         12
+Stale channels:         0
+Latest recovery point:  18 minutes ago
+Off-host copy:          Verified
+Last restore drill:     6 days ago
+Recovery status:        PASS
+The report must never contain private keys, passwords, full Biscuit tokens, or sensitive configuration values.
+
+2. Verified Recovery-Point Creation
+Command:
+fnn-safeguard backup --verify
+The workflow should:
+1. Call FNN’s official backup RPC or locate a completed official backup.
+2. Wait for the timestamped backup directory to finish.
+3. Verify the presence and readability of the database, CKB key, and Fiber key.
+4. Record the node identity, network, FNN version, and configuration checksum.
+5. Hash the backup files.
+6. Generate a machine-readable recovery manifest.
+7. Encrypt the recovery point with an established tool.
+8. Replicate it to an off-host storage target.
+9. Download or re-read the remote copy and verify its checksum.
+10. Apply a retention policy.
+Example manifest:
+{
+  "format_version": 1,
+  "node_public_key": "03ab...91ef",
+  "network": "mainnet",
+  "fnn_version": "0.9.0",
+  "fnn_commit": "e6cb7ac...",
+  "created_at": "2026-09-07T12:00:00Z",
+  "database_present": true,
+  "fiber_key_present": true,
+  "ckb_key_present": true,
+  "config_checksum": "sha256:...",
+  "bundle_checksum": "sha256:...",
+  "off_host_copy_verified": true
+}
+The project should use established encryption and storage tooling such as Restic, age, S3-compatible object storage, or a remote filesystem. It should not implement custom cryptography.
+
+3. Isolated Restore Drill
+Command:
+fnn-safeguard drill --backup latest
+The tool restores a selected recovery point inside a temporary isolated environment.
+The drill should:
+Create a temporary Docker or namespace-based environment.
+Block Fiber P2P connectivity from the cloned node.
+Restore the backup into a separate data directory.
+Use the same FNN version that created the backup.
+Start the restored database in validation mode.
+Verify the restored node public key.
+Compare channel, payment, and invoice inventories with the manifest.
+Record restore duration and failures.
+Destroy the isolated environment after the report is generated.
+Example result:
+Backup completeness:     PASS
+Restore command:         PASS
+Database opened:         PASS
+Node identity:           MATCH
+Expected channels:       12
+Restored channels:       12
+Expected payments:       207
+Restored payments:       207
+Fiber P2P egress:        BLOCKED
+Restore duration:        46 seconds
+Recovery point status:   VERIFIED
+The report must not claim that restored channels are immediately spendable. FNN may mark risk-bearing restored channels as Stale, after which peer-assisted auditing may still be required.
+
+4. Target-Release Qualification
+Command:
+fnn-safeguard qualify --target v0.9.1
+The tool should test a target FNN binary against a cloned recovery point before the operator upgrades the live node.
+It should:
+Clone the latest verified recovery point.
+Record the source FNN version and database state.
+Run the target binary only against the clone.
+Permit migration only within the temporary environment.
+Block Fiber P2P participation.
+Capture migration, startup, and error output.
+Compare node identity and state inventories before and after.
+Detect missing records, startup failures, permission errors, and unexpected state changes.
+Generate a PASS, WARN, or BLOCK result.
+Example:
+Source version:          v0.9.0
+Target version:          v0.9.1
+Database migration:      PASS
+Node identity:           MATCH
+Channel inventory:       MATCH
+Payment inventory:       MATCH
+Unexpected record loss:  None detected
+Post-migration warning:  2 channels marked Stale
+Qualification result:    WARN
+The claim must remain precise:
+This qualifies a target binary against one operator’s cloned state. It does not certify that the release is universally safe or free from all protocol defects.
+
+5. Safe Upgrade Plan
+Command:
+fnn-safeguard plan-upgrade --target v0.9.1
+The generated plan should include:
+Latest verified recovery point
+Off-host-copy status
+Restore-drill result
+Target qualification result
+Required migration path
+Expected downtime
+Configuration changes
+Manual operator confirmations
+Post-upgrade checks
+Rollback boundary
+Example blocked result:
+UPGRADE BLOCKED
+
+Reason:
+The latest backup has not passed an isolated restore drill.
+
+Required action:
+fnn-safeguard drill --backup latest
+Example ready result:
+UPGRADE READY WITH WARNINGS
+
+Verified recovery point: PASS
+Off-host copy:            PASS
+Target migration:         PASS
+Identity comparison:      MATCH
+
+Warning:
+Two channels entered Stale during the cloned migration test.
+Monitor peer-assisted channel auditing after the live upgrade.
+
+Product Boundary
+Included
+Native FNN v0.9.x support
+Linux and Docker deployments
+Official FNN backup discovery and triggering
+Backup completeness verification
+Recovery manifests and checksums
+Encrypted off-host replication
+Retention policy
+Isolated restore drills
+State-specific target-release qualification
+PASS / WARN / BLOCK reports
+CLI and JSON output
+Docker and systemd packaging
+Operator documentation
+Explicitly Excluded
+Automatic live rollback
+Automatic production upgrades
+Automatic force closure
+Automatic replacement of active channel state
+Hosted custody of users’ backups or keys
+Custom encryption algorithms
+A full Fiber node manager
+Payment or channel-management dashboard
+Liquidity automation
+LSP operation
+CCH orchestration
+Wallet permission sessions
+Windows or macOS desktop support in Phase 1
+Universal release certification
+Guaranteed fund recovery
+Automatic live rollback must remain out of scope because restoring an older payment-channel state after the node has processed new activity can introduce serious state and penalty risk.
+
+Non-Duplication
+FNN Safeguard does not duplicate FiberGuard Session or Clasp. Those systems deal with permissions between applications and Fiber nodes. FNN Safeguard deals with backup validity, recovery, and release qualification.
+It also does not duplicate Fiber Studio. Fiber Studio is a graphical desktop application that manages a local node, payments, channels, updates, and migrations. FNN Safeguard is a headless server-operator tool whose core function is isolated restore verification and cloned-state upgrade qualification. Fiber Studio already includes an upgrade dialog and backup guidance, so FNN Safeguard must not grow into another desktop node manager.
+It does not replace FNN’s built-in backup functionality. FNN remains responsible for producing the database checkpoint and key backup. FNN Safeguard verifies, replicates, restores, and qualifies that recovery point.
+
+Target Users
+Public Fiber routing-node operators
+Merchant-operated Fiber nodes
+CCH and cross-chain service operators
+Trampoline and liquidity-node operators
+Wallet teams running persistent backend FNN nodes
+Developers maintaining long-lived testnet or mainnet deployments
+
+Recommended Technical Stack
+Primary language: Rust or Go
+CLI: clap for Rust or Cobra for Go
+FNN integration: JSON-RPC 2.0
+Isolation: Docker, network namespaces, or rootless Podman
+Encrypted backup: Restic and/or age
+Off-host storage: S3-compatible storage and local/SSH filesystem
+Reports: JSON plus human-readable terminal output
+State: SQLite
+Packaging: Docker image, standalone binary, systemd service/timer
+Testing: integration tests using FNN binaries and disposable node directories
+Rust provides stronger alignment with FNN’s implementation ecosystem, while Go may simplify the operator tooling and process orchestration. Either is acceptable, but the difficult Fiber-specific validation logic must not be delegated entirely to shell scripts.
+
+Recommended Timeline and Budget
+Timeline: 10 weeks
+Recommended request: $9,800 equivalent in CKB
+Suggested allocation:
+Milestone
+Duration
+Budget
+Node inspection and recovery manifests
+2 weeks
+$2,200
+Verified encrypted off-host recovery points
+3 weeks
+$2,600
+Isolated restore drills
+3 weeks
+$3,000
+Target-release qualification and packaging
+2 weeks
+$2,000
+Total
+10 weeks
+$9,800
+
+
+Objective Completion Criteria
+The funded project is complete when:
+1. The tool can identify or trigger an official FNN backup.
+
+2. It rejects a backup missing the database or either required key file.
+
+3. It generates a versioned recovery manifest without secrets.
+
+4. It encrypts and copies the recovery point to an off-host target.
+
+5. It verifies the copied recovery point after upload.
+
+6. It restores the selected backup in an isolated environment.
+
+7. The restored clone cannot participate in Fiber P2P networking.
+
+8. The restored node public key matches the expected identity.
+
+9. Channel, payment, and invoice inventories are compared.
+
+10. A target FNN v0.9.x binary can be tested against cloned state.
+
+11. Unexpected migration or state differences produce WARN or BLOCK.
+
+12. Passwords, keys, and tokens do not appear in reports, logs, URLs, or CI artifacts.
+
+13. The workflow produces both JSON and human-readable reports.
+
+14. At least two independently operated testnet nodes complete a pilot.
+
+15. No automatic live rollback or production-state replacement is implemented.
+
+Brief MVP / Pre-Submission Plan
+The MVP should prove the difficult Fiber-specific workflow before the grant is submitted.
+MVP Scope
+Build only these commands:
+fnn-safeguard inspect
+fnn-safeguard backup --verify
+fnn-safeguard drill --backup latest
+MVP Tasks
+1. Node inspection
+Connect to a local FNN v0.9.0 RPC.
+Read node identity, network, version, channels, payments, and invoices.
+Generate a sanitized inventory report.
+Hash the active configuration without printing secrets.
+2. Backup verification
+Trigger the official FNN admin backup RPC or detect the latest backup.
+Confirm that db/, key, and sk exist and are readable.
+Reject incomplete backups.
+Generate a JSON recovery manifest with checksums.
+3. Isolated restore drill
+Copy the backup into a temporary Docker environment.
+Disable or firewall Fiber P2P egress.
+Restore using the appropriate FNN binary.
+Safely handle the existing read-only-key restore condition.
+Start the restored database without connecting the cloned node to peers.
+4. Identity and state comparison
+Confirm that the restored public key matches the source node.
+Compare channel, payment, and invoice counts.
+Produce PASS, WARN, or FAIL.
+Show exact evidence for every result.
+5. Security checks
+Verify that keys and passwords never appear in logs.
+Verify that the cloned node cannot connect to Fiber peers.
+Delete the temporary restore environment after the test.
+Add negative tests for missing files, wrong password, corrupt database, and identity mismatch.
+6. External validation
+Run the MVP against your own FNN testnet node.
+Obtain two external operators willing to run it locally.
+Collect only sanitized reports; operators must not send you their key files or private backups.
+Publish the anonymized results in the proposal.
+MVP Success Output
+Official FNN backup:        FOUND
+Backup completeness:        PASS
+Manifest generated:         PASS
+Database restore:           PASS
+Node identity comparison:   MATCH
+Channel inventory:          MATCH
+Payment inventory:          MATCH
+Fiber P2P egress:           BLOCKED
+Secrets in logs:            NONE DETECTED
+Recovery drill result:      VERIFIED
+Once this workflow works against at least two independently operated nodes, the proposal becomes credible enough to submit at the recommended scope and budget.
+
