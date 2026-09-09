@@ -42,20 +42,22 @@ impl DrillCommand {
     pub async fn run(opts: DrillOptions) -> Result<DrillReport> {
         let start_time = Instant::now();
 
-        let backup_dir = Self::resolve_recovery_point(opts.backup_path.as_deref(), opts.node_dir.as_deref())?;
+        let backup_dir =
+            Self::resolve_recovery_point(opts.backup_path.as_deref(), opts.node_dir.as_deref())?;
         let manifest = RecoveryManifest::load_from_dir(&backup_dir).ok();
         let expected_pubkey = manifest.as_ref().map(|m| m.node_public_key.as_str());
 
-        Self::run_optional_container_drill(opts.use_docker, opts.docker_image.as_deref(), &backup_dir)?;
+        Self::run_optional_container_drill(
+            opts.use_docker,
+            opts.docker_image.as_deref(),
+            &backup_dir,
+        )?;
 
         let sandbox = ProcessIsolationSandbox::new()
             .context("Failed to initialize process isolation sandbox")?;
 
-        let execution = sandbox.run_restore_drill(
-            &backup_dir,
-            opts.fnn_bin.as_deref(),
-            expected_pubkey,
-        )?;
+        let execution =
+            sandbox.run_restore_drill(&backup_dir, opts.fnn_bin.as_deref(), expected_pubkey)?;
 
         let elapsed_ms = start_time.elapsed().as_millis();
         let all_pass = execution.backup_valid
@@ -63,13 +65,8 @@ impl DrillCommand {
             && execution.identity_match
             && execution.p2p_egress_blocked;
 
-        let report = Self::assemble_report(
-            &backup_dir,
-            manifest.as_ref(),
-            &execution,
-            elapsed_ms,
-            all_pass,
-        );
+        let report =
+            Self::assemble_report(&backup_dir, manifest.as_ref(), &execution, elapsed_ms, all_pass);
 
         Self::render_report(&report, opts.json_output);
 
@@ -81,12 +78,16 @@ impl DrillCommand {
     }
 
     /// Resolves the recovery point path from explicit argument or latest discovery.
-    fn resolve_recovery_point(backup_path: Option<&str>, node_dir: Option<&Path>) -> Result<PathBuf> {
+    fn resolve_recovery_point(
+        backup_path: Option<&str>,
+        node_dir: Option<&Path>,
+    ) -> Result<PathBuf> {
         let path = match backup_path {
             Some("latest") | None => {
                 let base = node_dir.unwrap_or_else(|| Path::new("."));
-                ConfigSanitizer::discover_latest_backup(base)
-                    .ok_or_else(|| anyhow::anyhow!("No backup directory discovered in {:?}", base))?
+                ConfigSanitizer::discover_latest_backup(base).ok_or_else(|| {
+                    anyhow::anyhow!("No backup directory discovered in {:?}", base)
+                })?
             }
             Some(custom) => PathBuf::from(custom),
         };
@@ -110,9 +111,7 @@ impl DrillCommand {
 
         let image = docker_image.unwrap_or("nervos/fiber:latest");
         let docker_sandbox = DockerIsolationSandbox::new(image);
-        docker_sandbox
-            .run_container_drill(backup_dir)
-            .context("Docker isolation drill failed")
+        docker_sandbox.run_container_drill(backup_dir).context("Docker isolation drill failed")
     }
 
     /// Assembles the unified drill report.
@@ -123,16 +122,31 @@ impl DrillCommand {
         elapsed_ms: u128,
         all_pass: bool,
     ) -> DrillReport {
-        let expected_pubkey = manifest
-            .map(|m| m.node_public_key.clone())
-            .unwrap_or_else(|| "N/A".to_string());
+        let expected_pubkey =
+            manifest.map(|m| m.node_public_key.clone()).unwrap_or_else(|| "N/A".to_string());
 
         DrillReport {
             backup_dir: backup_dir.display().to_string(),
-            backup_completeness: if execution.backup_valid { "PASS".to_string() } else { "FAIL".to_string() },
-            manifest_verified: if manifest.is_some() { "PASS".to_string() } else { "NOT_FOUND".to_string() },
-            database_restore: if execution.database_opened { "PASS".to_string() } else { "FAIL".to_string() },
-            node_identity_comparison: if execution.identity_match { "MATCH".to_string() } else { "MISMATCH".to_string() },
+            backup_completeness: if execution.backup_valid {
+                "PASS".to_string()
+            } else {
+                "FAIL".to_string()
+            },
+            manifest_verified: if manifest.is_some() {
+                "PASS".to_string()
+            } else {
+                "NOT_FOUND".to_string()
+            },
+            database_restore: if execution.database_opened {
+                "PASS".to_string()
+            } else {
+                "FAIL".to_string()
+            },
+            node_identity_comparison: if execution.identity_match {
+                "MATCH".to_string()
+            } else {
+                "MISMATCH".to_string()
+            },
             expected_pubkey,
             restored_pubkey: execution.restored_pubkey.clone(),
             fiber_p2p_egress: "BLOCKED".to_string(),
@@ -155,7 +169,11 @@ impl DrillCommand {
         TerminalReporter::row("Backup directory:", &report.backup_dir);
         TerminalReporter::status_row(
             "Backup completeness:",
-            if report.backup_completeness == "PASS" { CheckStatus::Pass } else { CheckStatus::Fail },
+            if report.backup_completeness == "PASS" {
+                CheckStatus::Pass
+            } else {
+                CheckStatus::Fail
+            },
             None,
         );
         TerminalReporter::status_row(
@@ -168,7 +186,10 @@ impl DrillCommand {
             if report.database_restore == "PASS" { CheckStatus::Pass } else { CheckStatus::Fail },
             None,
         );
-        TerminalReporter::row("Node identity comparison:", report.node_identity_comparison.green().bold());
+        TerminalReporter::row(
+            "Node identity comparison:",
+            report.node_identity_comparison.green().bold(),
+        );
         TerminalReporter::row("Restored public key:", &report.restored_pubkey);
         TerminalReporter::row("Channel inventory:", "MATCH (Stale audit safe)".green());
         TerminalReporter::row("Payment inventory:", "MATCH".green());
@@ -182,7 +203,10 @@ impl DrillCommand {
             },
         );
         TerminalReporter::row("Secrets in logs:", "NONE DETECTED".green().bold());
-        TerminalReporter::row("Restore duration:", format!("{:.2}s", report.restore_duration_ms as f64 / 1000.0));
+        TerminalReporter::row(
+            "Restore duration:",
+            format!("{:.2}s", report.restore_duration_ms as f64 / 1000.0),
+        );
         TerminalReporter::footer(
             report.drill_result == "VERIFIED",
             &format!("RECOVERY DRILL: {}", report.drill_result),
