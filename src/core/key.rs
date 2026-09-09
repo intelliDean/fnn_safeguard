@@ -19,6 +19,7 @@ impl std::fmt::Debug for IdentityKey {
 }
 
 impl IdentityKey {
+    /// Loads and derives an identity key directly from a file.
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         if !path.exists() {
@@ -26,17 +27,17 @@ impl IdentityKey {
         }
 
         let raw = fs::read(path).with_context(|| format!("Failed to read secret key file {:?}", path))?;
+        Self::from_bytes(&raw).with_context(|| format!("Invalid identity key in {:?}", path))
+    }
 
+    /// Derives the compressed 33-byte secp256k1 public key from 32 raw secret key bytes.
+    pub fn from_bytes(raw: &[u8]) -> Result<Self> {
         if raw.len() != 32 {
-            bail!(
-                "Invalid secret key length in {:?}: expected 32 bytes, got {}",
-                path,
-                raw.len()
-            );
+            bail!("Invalid secret key length: expected 32 bytes, got {}", raw.len());
         }
 
         let secp = Secp256k1::new();
-        let sk = SecretKey::from_slice(&raw).context("Invalid secp256k1 secret key bytes in identity file")?;
+        let sk = SecretKey::from_slice(raw).context("Invalid secp256k1 secret key curve point")?;
         let pk = PublicKey::from_secret_key(&secp, &sk);
         let pubkey_bytes = pk.serialize();
         let pubkey_hex = hex::encode(pubkey_bytes);
@@ -108,5 +109,30 @@ impl PermissionManager {
     #[cfg(not(unix))]
     pub fn harden_after_restore(_path: impl AsRef<Path>) -> Result<()> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_identity_key_from_bytes_valid() {
+        let raw = [1u8; 32];
+        let key = IdentityKey::from_bytes(&raw).unwrap();
+        assert_eq!(key.public_key_hex().len(), 66); // 33 bytes compressed hex
+        assert!(key.public_key_hex().starts_with("02") || key.public_key_hex().starts_with("03"));
+    }
+
+    #[test]
+    fn test_identity_key_invalid_length() {
+        let raw = [1u8; 31];
+        assert!(IdentityKey::from_bytes(&raw).is_err());
+    }
+
+    #[test]
+    fn test_identity_key_zero_bytes_invalid_curve() {
+        let raw = [0u8; 32]; // 0 is not a valid secp256k1 secret key
+        assert!(IdentityKey::from_bytes(&raw).is_err());
     }
 }
