@@ -138,13 +138,13 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Inspect(args) => {
-            commands::InspectCommand::run(
-                &args.rpc_url,
-                args.auth_token,
-                Some(args.config),
-                Some(args.node_dir),
-                args.json,
-            )
+            commands::InspectCommand::run(commands::InspectOptions {
+                rpc_url: args.rpc_url,
+                auth_token: args.auth_token,
+                config_path: Some(args.config),
+                node_dir: Some(args.node_dir),
+                json_output: args.json,
+            })
             .await?;
         }
         Commands::Backup(args) => {

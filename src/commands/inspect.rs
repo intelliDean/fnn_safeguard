@@ -2,11 +2,21 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::config::ConfigSanitizer;
 use crate::core::reporter::{CheckStatus, TerminalReporter};
 use crate::rpc::client::FnnRpcClient;
+use crate::rpc::types::ChannelInfo;
+
+#[derive(Debug, Clone)]
+pub struct InspectOptions {
+    pub rpc_url: String,
+    pub auth_token: Option<String>,
+    pub config_path: Option<PathBuf>,
+    pub node_dir: Option<PathBuf>,
+    pub json_output: bool,
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct InspectReport {
@@ -24,71 +34,40 @@ pub struct InspectReport {
     pub recovery_status: String,
 }
 
+#[derive(Default)]
+struct ChannelCounts {
+    ready: usize,
+    stale: usize,
+    total: usize,
+}
+
+struct BackupFreshness {
+    latest_path: Option<String>,
+    age_description: String,
+    status: String,
+}
+
 pub struct InspectCommand;
 
 impl InspectCommand {
-    pub async fn run(
-        rpc_url: &str,
-        auth_token: Option<String>,
-        config_path: Option<PathBuf>,
-        node_dir: Option<PathBuf>,
-        json_output: bool,
-    ) -> Result<InspectReport> {
-        let client = FnnRpcClient::new(rpc_url, auth_token)?;
+    pub async fn run(opts: InspectOptions) -> Result<InspectReport> {
+        let client = FnnRpcClient::new(&opts.rpc_url, opts.auth_token)?;
 
-        // 1. Fetch live node info
         let node_info = client
             .node_info()
             .await
             .context("Failed to fetch node_info from FNN RPC")?;
 
-        // 2. Fetch channels
         let channel_res = client.list_channels(None).await.unwrap_or_default();
-        let mut channel_counts: HashMap<String, usize> = HashMap::new();
-        for ch in &channel_res.channels {
-            *channel_counts.entry(ch.state.as_str().to_string()).or_insert(0) += 1;
-        }
+        let channel_counts = Self::aggregate_channels(&channel_res.channels);
 
-        let ready_channels = *channel_counts.get("Ready").unwrap_or(&0);
-        let stale_channels = *channel_counts.get("Stale").unwrap_or(&0);
-        let total_channels = channel_res.channels.len();
-
-        // 3. Fetch payments
         let payment_res = client.list_payments(None).await.unwrap_or_default();
         let total_payments = payment_res.payments.len();
 
-        // 4. Hash configuration without printing secrets
-        let config_file = config_path.unwrap_or_else(|| PathBuf::from("config.yml"));
+        let config_file = opts.config_path.unwrap_or_else(|| PathBuf::from("config.yml"));
         let (config_checksum, _) = ConfigSanitizer::sanitize_and_hash(&config_file)?;
 
-        // 5. Detect latest backup if node_dir is provided
-        let mut latest_backup_str = None;
-        let mut backup_age_desc = "No backup discovered".to_string();
-        let mut recovery_status = "WARN".to_string();
-
-        let search_dir = node_dir.unwrap_or_else(|| PathBuf::from("."));
-        if let Some(latest) = ConfigSanitizer::discover_latest_backup(&search_dir) {
-            let path_str = latest.display().to_string();
-            latest_backup_str = Some(path_str);
-            if let Some(file_name) = latest.file_name().and_then(|f| f.to_str()) {
-                if let Ok(millis) = file_name.parse::<i64>() {
-                    if let Some(dt) = DateTime::from_timestamp_millis(millis) {
-                        let duration = Utc::now().signed_duration_since(dt);
-                        let mins = duration.num_minutes();
-                        if mins < 60 {
-                            backup_age_desc = format!("{} minutes ago", mins.max(1));
-                        } else {
-                            backup_age_desc = format!("{} hours ago", duration.num_hours());
-                        }
-                        recovery_status = "PASS".to_string();
-                    }
-                }
-            }
-            if backup_age_desc == "No backup discovered" {
-                backup_age_desc = "Discovered".to_string();
-                recovery_status = "PASS".to_string();
-            }
-        }
+        let freshness = Self::evaluate_backup_freshness(opts.node_dir.as_deref());
 
         let report = InspectReport {
             node_public_key: node_info.pubkey.clone(),
@@ -99,40 +78,101 @@ impl InspectCommand {
             } else {
                 "testnet".to_string()
             },
-            ready_channels,
-            stale_channels,
-            total_channels,
+            ready_channels: channel_counts.ready,
+            stale_channels: channel_counts.stale,
+            total_channels: channel_counts.total,
             total_payments,
             config_checksum,
-            latest_backup_path: latest_backup_str,
-            backup_age_description: backup_age_desc,
-            recovery_status,
+            latest_backup_path: freshness.latest_path,
+            backup_age_description: freshness.age_description,
+            recovery_status: freshness.status,
         };
 
-        if json_output {
-            TerminalReporter::print_json(&report);
-        } else {
-            TerminalReporter::header("FNN Safeguard: Node Inspection Report");
-            TerminalReporter::row("Node public key:", &report.node_public_key);
-            TerminalReporter::row("FNN version:", format!("{} ({})", report.fnn_version, &report.fnn_commit[0..7.min(report.fnn_commit.len())]));
-            TerminalReporter::row("Network:", &report.network);
-            TerminalReporter::row("Ready channels:", report.ready_channels);
-            TerminalReporter::row("Stale channels:", report.stale_channels);
-            TerminalReporter::row("Total payments:", report.total_payments);
-            TerminalReporter::row("Config checksum:", &report.config_checksum);
-            TerminalReporter::row("Latest recovery point:", &report.backup_age_description);
-            TerminalReporter::status_row(
-                "Recovery status:",
-                if report.recovery_status == "PASS" {
-                    CheckStatus::Pass
-                } else {
-                    CheckStatus::Warn
-                },
-                None,
-            );
-            TerminalReporter::footer(report.recovery_status == "PASS", &report.recovery_status);
-        }
+        Self::render_report(&report, opts.json_output);
 
         Ok(report)
+    }
+
+    /// Aggregates channel counts by status (Ready, Stale, Total).
+    fn aggregate_channels(channels: &[ChannelInfo]) -> ChannelCounts {
+        let mut map: HashMap<String, usize> = HashMap::new();
+        for ch in channels {
+            *map.entry(ch.state.as_str().to_string()).or_insert(0) += 1;
+        }
+
+        ChannelCounts {
+            ready: *map.get("Ready").unwrap_or(&0),
+            stale: *map.get("Stale").unwrap_or(&0),
+            total: channels.len(),
+        }
+    }
+
+    /// Discovers and formats backup freshness from disk.
+    fn evaluate_backup_freshness(node_dir: Option<&Path>) -> BackupFreshness {
+        let search_dir = node_dir.unwrap_or_else(|| Path::new("."));
+        let latest = ConfigSanitizer::discover_latest_backup(search_dir);
+
+        let Some(path) = latest else {
+            return BackupFreshness {
+                latest_path: None,
+                age_description: "No backup discovered".to_string(),
+                status: "WARN".to_string(),
+            };
+        };
+
+        let path_str = path.display().to_string();
+        let mut age_desc = "Discovered".to_string();
+        let mut status = "PASS".to_string();
+
+        if let Some(name) = path.file_name().and_then(|f| f.to_str()) {
+            if let Ok(millis) = name.parse::<i64>() {
+                if let Some(dt) = DateTime::from_timestamp_millis(millis) {
+                    let duration = Utc::now().signed_duration_since(dt);
+                    let mins = duration.num_minutes();
+                    if mins < 60 {
+                        age_desc = format!("{} minutes ago", mins.max(1));
+                    } else {
+                        age_desc = format!("{} hours ago", duration.num_hours());
+                    }
+                    status = "PASS".to_string();
+                }
+            }
+        }
+
+        BackupFreshness {
+            latest_path: Some(path_str),
+            age_description: age_desc,
+            status,
+        }
+    }
+
+    /// Formats the inspection report for terminal display or JSON.
+    fn render_report(report: &InspectReport, json_output: bool) {
+        if json_output {
+            TerminalReporter::print_json(report);
+            return;
+        }
+
+        let commit_preview = &report.fnn_commit[0..7.min(report.fnn_commit.len())];
+
+        TerminalReporter::header("FNN Safeguard: Node Inspection Report");
+        TerminalReporter::row("Node public key:", &report.node_public_key);
+        TerminalReporter::row("FNN version:", format!("{} ({})", report.fnn_version, commit_preview));
+        TerminalReporter::row("Network:", &report.network);
+        TerminalReporter::row("Ready channels:", report.ready_channels);
+        TerminalReporter::row("Stale channels:", report.stale_channels);
+        TerminalReporter::row("Total payments:", report.total_payments);
+        TerminalReporter::row("Config checksum:", &report.config_checksum);
+        TerminalReporter::row("Latest recovery point:", &report.backup_age_description);
+        TerminalReporter::status_row(
+            "Recovery status:",
+            if report.recovery_status == "PASS" {
+                CheckStatus::Pass
+            } else {
+                CheckStatus::Warn
+            },
+            None,
+        );
+        TerminalReporter::footer(report.recovery_status == "PASS", &report.recovery_status);
     }
 }
