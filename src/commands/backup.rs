@@ -7,7 +7,7 @@ use tokio::time::sleep;
 
 use crate::config::ConfigSanitizer;
 use crate::core::reporter::{CheckStatus, TerminalReporter};
-use crate::core::validator::{BackupValidationResult, BackupValidator};
+use crate::core::validator::{BackupValidationResult, BackupValidator, BuildManifestParams};
 use crate::rpc::client::FnnRpcClient;
 
 #[derive(Debug, Clone)]
@@ -98,16 +98,16 @@ impl BackupCommand {
         config_checksum: &str,
         expected_pubkey: Option<&str>,
     ) -> Result<(String, String)> {
-        let manifest = BackupValidator::build_manifest(
-            backup_dir,
-            "testnet",
-            "v0.9.0",
-            "e6cb7ac",
+        let params = BuildManifestParams {
+            network: "testnet",
+            fnn_version: "v0.9.0",
+            fnn_commit: "e6cb7ac",
             config_checksum,
-            None,
-            None,
+            channel_count: None,
+            payment_count: None,
             expected_pubkey,
-        )?;
+        };
+        let manifest = BackupValidator::build_manifest(backup_dir, &params)?;
         let path = manifest.save_to_dir(backup_dir)?;
         Ok((manifest.bundle_checksum, path.display().to_string()))
     }

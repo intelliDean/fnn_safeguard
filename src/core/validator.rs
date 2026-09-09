@@ -7,7 +7,18 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 use super::key::IdentityKey;
-use super::manifest::{hash_file, FileMetadata, RecoveryManifest};
+use super::manifest::{hash_file, FileMetadata, ManifestParams, RecoveryManifest};
+
+#[derive(Debug, Clone, Default)]
+pub struct BuildManifestParams<'a> {
+    pub network: &'a str,
+    pub fnn_version: &'a str,
+    pub fnn_commit: &'a str,
+    pub config_checksum: &'a str,
+    pub channel_count: Option<u32>,
+    pub payment_count: Option<u32>,
+    pub expected_pubkey: Option<&'a str>,
+}
 
 #[derive(Debug, Clone)]
 pub struct BackupValidationResult {
@@ -73,13 +84,11 @@ impl BackupValidator {
         match IdentityKey::from_file(&fiber_key_path) {
             Ok(id_key) => {
                 derived_pubkey = id_key.public_key_hex().to_string();
-                if let Some(expected) = expected_pubkey {
-                    if !id_key.matches_public_key(expected) {
-                        errors.push(format!(
-                            "Node public key mismatch: derived {} does not match expected {}",
-                            derived_pubkey, expected
-                        ));
-                    }
+                if let Some(expected) = expected_pubkey.filter(|exp| !id_key.matches_public_key(exp)) {
+                    errors.push(format!(
+                        "Node public key mismatch: derived {} does not match expected {}",
+                        derived_pubkey, expected
+                    ));
                 }
             }
             Err(e) => {
@@ -151,30 +160,24 @@ impl BackupValidator {
     /// Generates a full RecoveryManifest for the validated backup directory.
     pub fn build_manifest(
         backup_dir: impl AsRef<Path>,
-        network: &str,
-        fnn_version: &str,
-        fnn_commit: &str,
-        config_checksum: &str,
-        channel_count: Option<u32>,
-        payment_count: Option<u32>,
-        expected_pubkey: Option<&str>,
+        params: &BuildManifestParams,
     ) -> Result<RecoveryManifest> {
         let dir = backup_dir.as_ref();
-        let validation = Self::inspect_and_validate(dir, expected_pubkey)?;
+        let validation = Self::inspect_and_validate(dir, params.expected_pubkey)?;
         if !validation.is_valid {
             bail!("Cannot build manifest for invalid backup: {:?}", validation.errors);
         }
 
-        let mut manifest = RecoveryManifest::new(
-            &validation.derived_pubkey,
-            network,
-            fnn_version,
-            fnn_commit,
-            &validation.database_type,
-            config_checksum,
-            channel_count,
-            payment_count,
-        );
+        let mut manifest = RecoveryManifest::new(ManifestParams {
+            node_public_key: validation.derived_pubkey,
+            network: params.network.to_string(),
+            fnn_version: params.fnn_version.to_string(),
+            fnn_commit: params.fnn_commit.to_string(),
+            database_type: validation.database_type,
+            config_checksum: params.config_checksum.to_string(),
+            channel_count: params.channel_count,
+            payment_count: params.payment_count,
+        });
 
         manifest.database_present = true;
         manifest.fiber_key_present = true;

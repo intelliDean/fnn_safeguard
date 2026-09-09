@@ -35,32 +35,35 @@ pub struct RecoveryManifest {
     pub files: BTreeMap<String, FileMetadata>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManifestParams {
+    pub node_public_key: String,
+    pub network: String,
+    pub fnn_version: String,
+    pub fnn_commit: String,
+    pub database_type: String,
+    pub config_checksum: String,
+    pub channel_count: Option<u32>,
+    pub payment_count: Option<u32>,
+}
+
 impl RecoveryManifest {
-    pub fn new(
-        node_public_key: impl Into<String>,
-        network: impl Into<String>,
-        fnn_version: impl Into<String>,
-        fnn_commit: impl Into<String>,
-        database_type: impl Into<String>,
-        config_checksum: impl Into<String>,
-        channel_count: Option<u32>,
-        payment_count: Option<u32>,
-    ) -> Self {
+    pub fn new(params: ManifestParams) -> Self {
         Self {
             format_version: 1,
-            node_public_key: node_public_key.into(),
-            network: network.into(),
-            fnn_version: fnn_version.into(),
-            fnn_commit: fnn_commit.into(),
+            node_public_key: params.node_public_key,
+            network: params.network,
+            fnn_version: params.fnn_version,
+            fnn_commit: params.fnn_commit,
             created_at: Utc::now(),
-            database_type: database_type.into(),
+            database_type: params.database_type,
             database_present: false,
             fiber_key_present: false,
             ckb_key_present: false,
-            config_checksum: config_checksum.into(),
+            config_checksum: params.config_checksum,
             bundle_checksum: String::new(),
-            channel_count,
-            payment_count,
+            channel_count: params.channel_count,
+            payment_count: params.payment_count,
             files: BTreeMap::new(),
         }
     }
@@ -107,16 +110,16 @@ mod tests {
     #[test]
     fn test_manifest_roundtrip_save_and_load() {
         let temp = TempDir::new().unwrap();
-        let manifest = RecoveryManifest::new(
-            "03pubkey123",
-            "testnet",
-            "v0.9.0",
-            "commit123",
-            "rocksdb",
-            "sha256:config",
-            Some(5),
-            Some(10),
-        );
+        let manifest = RecoveryManifest::new(ManifestParams {
+            node_public_key: "03pubkey123".to_string(),
+            network: "testnet".to_string(),
+            fnn_version: "v0.9.0".to_string(),
+            fnn_commit: "commit123".to_string(),
+            database_type: "rocksdb".to_string(),
+            config_checksum: "sha256:config".to_string(),
+            channel_count: Some(5),
+            payment_count: Some(10),
+        });
 
         let path = manifest.save_to_dir(temp.path()).unwrap();
         assert!(path.exists());

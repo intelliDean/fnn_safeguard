@@ -1,5 +1,5 @@
 use fnn_safeguard::core::manifest::RecoveryManifest;
-use fnn_safeguard::core::validator::BackupValidator;
+use fnn_safeguard::core::validator::{BackupValidator, BuildManifestParams};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use std::fs;
 use tempfile::TempDir;
@@ -44,17 +44,16 @@ fn test_backup_validation_and_manifest_generation() {
     assert_eq!(validation.file_count, 5); // sk, key, CURRENT, MANIFEST-000001, 000002.sst
 
     // 2. Build manifest
-    let manifest = BackupValidator::build_manifest(
-        &backup_path,
-        "testnet",
-        "v0.9.0",
-        "e6cb7ac7770b1798a1ad5dfb9a8f4ae5db52036f",
-        "sha256:dummy_config_hash",
-        Some(12),
-        Some(45),
-        Some(&expected_pubkey),
-    )
-    .unwrap();
+    let manifest_params = BuildManifestParams {
+        network: "testnet",
+        fnn_version: "v0.9.0",
+        fnn_commit: "e6cb7ac7770b1798a1ad5dfb9a8f4ae5db52036f",
+        config_checksum: "sha256:dummy_config_hash",
+        channel_count: Some(12),
+        payment_count: Some(45),
+        expected_pubkey: Some(&expected_pubkey),
+    };
+    let manifest = BackupValidator::build_manifest(&backup_path, &manifest_params).unwrap();
 
     assert_eq!(manifest.format_version, 1);
     assert_eq!(manifest.node_public_key, expected_pubkey);

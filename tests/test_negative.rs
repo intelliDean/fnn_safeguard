@@ -1,4 +1,4 @@
-use fnn_safeguard::core::validator::BackupValidator;
+use fnn_safeguard::core::validator::{BackupValidator, BuildManifestParams};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use std::fs;
 use tempfile::TempDir;
@@ -87,17 +87,16 @@ fn test_zero_secrets_in_manifest() {
     fs::write(backup_dir.join("key"), vec![0xaa; 64]).unwrap();
     fs::write(backup_dir.join("data.sqlite"), "SQLite format 3\0test").unwrap();
 
-    let manifest = BackupValidator::build_manifest(
-        &backup_dir,
-        "testnet",
-        "v0.9.0",
-        "commit",
-        "sha256:config",
-        None,
-        None,
-        None,
-    )
-    .unwrap();
+    let params = BuildManifestParams {
+        network: "testnet",
+        fnn_version: "v0.9.0",
+        fnn_commit: "commit",
+        config_checksum: "sha256:config",
+        channel_count: None,
+        payment_count: None,
+        expected_pubkey: None,
+    };
+    let manifest = BackupValidator::build_manifest(&backup_dir, &params).unwrap();
 
     let json_str = serde_json::to_string(&manifest).unwrap();
 

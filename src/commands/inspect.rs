@@ -124,19 +124,21 @@ impl InspectCommand {
         let mut age_desc = "Discovered".to_string();
         let mut status = "PASS".to_string();
 
-        if let Some(name) = path.file_name().and_then(|f| f.to_str()) {
-            if let Ok(millis) = name.parse::<i64>() {
-                if let Some(dt) = DateTime::from_timestamp_millis(millis) {
-                    let duration = Utc::now().signed_duration_since(dt);
-                    let mins = duration.num_minutes();
-                    if mins < 60 {
-                        age_desc = format!("{} minutes ago", mins.max(1));
-                    } else {
-                        age_desc = format!("{} hours ago", duration.num_hours());
-                    }
-                    status = "PASS".to_string();
-                }
+        let opt_dt = path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .and_then(|name| name.parse::<i64>().ok())
+            .and_then(DateTime::from_timestamp_millis);
+
+        if let Some(dt) = opt_dt {
+            let duration = Utc::now().signed_duration_since(dt);
+            let mins = duration.num_minutes();
+            if mins < 60 {
+                age_desc = format!("{} minutes ago", mins.max(1));
+            } else {
+                age_desc = format!("{} hours ago", duration.num_hours());
             }
+            status = "PASS".to_string();
         }
 
         BackupFreshness {
