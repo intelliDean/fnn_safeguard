@@ -148,16 +148,16 @@ async fn main() -> Result<()> {
             .await?;
         }
         Commands::Backup(args) => {
-            commands::BackupCommand::run(
-                args.backup_dir,
-                Some(args.node_dir),
-                args.trigger,
-                Some(&args.rpc_url),
-                args.auth_token,
-                Some(args.config),
-                args.expected_pubkey,
-                args.json,
-            )
+            commands::BackupCommand::run(commands::BackupOptions {
+                backup_dir: args.backup_dir,
+                node_dir: Some(args.node_dir),
+                trigger_rpc: args.trigger,
+                rpc_url: Some(args.rpc_url),
+                auth_token: args.auth_token,
+                config_path: Some(args.config),
+                expected_pubkey: args.expected_pubkey,
+                json_output: args.json,
+            })
             .await?;
         }
         Commands::Drill(args) => {
