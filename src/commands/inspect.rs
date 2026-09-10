@@ -53,16 +53,18 @@ impl InspectCommand {
     pub async fn run(opts: InspectOptions) -> Result<InspectReport> {
         let client = FnnRpcClient::new(&opts.rpc_url, opts.auth_token)?;
 
-        let node_info = client
-            .node_info()
-            .await
-            .context("Failed to fetch node_info from FNN RPC")?;
+        let node_info =
+            client.node_info().await.context("Failed to fetch node_info from FNN RPC")?;
 
-        let channel_res = client.list_channels(None).await.unwrap_or_default();
+        let channel_res =
+            client.list_channels(None).await.context("Failed to list channels from FNN RPC")?;
         let channel_counts = Self::aggregate_channels(&channel_res.channels);
 
-        let payment_res = client.list_payments(None).await.unwrap_or_default();
-        let total_payments = payment_res.payments.len();
+        let payments = client
+            .list_all_payments(None, None)
+            .await
+            .context("Failed to query payments from FNN RPC")?;
+        let total_payments = payments.len();
 
         let config_file = opts.config_path.unwrap_or_else(|| PathBuf::from("config.yml"));
         let (config_checksum, _) = ConfigSanitizer::sanitize_and_hash(&config_file)?;
@@ -93,18 +95,19 @@ impl InspectCommand {
         Ok(report)
     }
 
-    /// Aggregates channel counts by status (Ready, Stale, Total).
+    /// Aggregates channel counts by status (Ready / ChannelReady, Stale, Total).
     fn aggregate_channels(channels: &[ChannelInfo]) -> ChannelCounts {
-        let mut map: HashMap<String, usize> = HashMap::new();
+        let mut ready = 0;
+        let mut stale = 0;
         for ch in channels {
-            *map.entry(ch.state.as_str().to_string()).or_insert(0) += 1;
+            if ch.state.is_ready() {
+                ready += 1;
+            } else if ch.state.is_stale() {
+                stale += 1;
+            }
         }
 
-        ChannelCounts {
-            ready: *map.get("Ready").unwrap_or(&0),
-            stale: *map.get("Stale").unwrap_or(&0),
-            total: channels.len(),
-        }
+        ChannelCounts { ready, stale, total: channels.len() }
     }
 
     /// Discovers and formats backup freshness from disk.
@@ -141,11 +144,7 @@ impl InspectCommand {
             status = "PASS".to_string();
         }
 
-        BackupFreshness {
-            latest_path: Some(path_str),
-            age_description: age_desc,
-            status,
-        }
+        BackupFreshness { latest_path: Some(path_str), age_description: age_desc, status }
     }
 
     /// Formats the inspection report for terminal display or JSON.
@@ -159,7 +158,10 @@ impl InspectCommand {
 
         TerminalReporter::header("FNN Safeguard: Node Inspection Report");
         TerminalReporter::row("Node public key:", &report.node_public_key);
-        TerminalReporter::row("FNN version:", format!("{} ({})", report.fnn_version, commit_preview));
+        TerminalReporter::row(
+            "FNN version:",
+            format!("{} ({})", report.fnn_version, commit_preview),
+        );
         TerminalReporter::row("Network:", &report.network);
         TerminalReporter::row("Ready channels:", report.ready_channels);
         TerminalReporter::row("Stale channels:", report.stale_channels);
@@ -168,11 +170,7 @@ impl InspectCommand {
         TerminalReporter::row("Latest recovery point:", &report.backup_age_description);
         TerminalReporter::status_row(
             "Recovery status:",
-            if report.recovery_status == "PASS" {
-                CheckStatus::Pass
-            } else {
-                CheckStatus::Warn
-            },
+            if report.recovery_status == "PASS" { CheckStatus::Pass } else { CheckStatus::Warn },
             None,
         );
         TerminalReporter::footer(report.recovery_status == "PASS", &report.recovery_status);

@@ -8,6 +8,8 @@ use walkdir::WalkDir;
 
 use super::key::IdentityKey;
 use super::manifest::{hash_file, FileMetadata, ManifestParams, RecoveryManifest};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default)]
 pub struct BuildManifestParams<'a> {
@@ -18,9 +20,10 @@ pub struct BuildManifestParams<'a> {
     pub channel_count: Option<u32>,
     pub payment_count: Option<u32>,
     pub expected_pubkey: Option<&'a str>,
+    pub created_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackupValidationResult {
     pub is_valid: bool,
     pub database_type: String,
@@ -47,7 +50,8 @@ impl BackupValidator {
 
         let mut errors = Vec::new();
 
-        let (fiber_key_path, derived_pubkey) = Self::validate_fiber_key(dir, expected_pubkey, &mut errors);
+        let (fiber_key_path, derived_pubkey) =
+            Self::validate_fiber_key(dir, expected_pubkey, &mut errors);
         let ckb_key_path = Self::validate_ckb_key(dir, &mut errors);
         let (database_type, database_path) = Self::validate_database(dir, &mut errors);
         let (total_bytes, file_count) = Self::calculate_dir_stats(dir);
@@ -84,7 +88,9 @@ impl BackupValidator {
         match IdentityKey::from_file(&fiber_key_path) {
             Ok(id_key) => {
                 derived_pubkey = id_key.public_key_hex().to_string();
-                if let Some(expected) = expected_pubkey.filter(|exp| !id_key.matches_public_key(exp)) {
+                if let Some(expected) =
+                    expected_pubkey.filter(|exp| !id_key.matches_public_key(exp))
+                {
                     errors.push(format!(
                         "Node public key mismatch: derived {} does not match expected {}",
                         derived_pubkey, expected
@@ -122,7 +128,9 @@ impl BackupValidator {
         if rocksdb_path.is_dir() {
             let current_file = rocksdb_path.join("CURRENT");
             if !current_file.exists() {
-                errors.push("RocksDB directory exists but lacks 'CURRENT' descriptor file".to_string());
+                errors.push(
+                    "RocksDB directory exists but lacks 'CURRENT' descriptor file".to_string(),
+                );
             }
             ("rocksdb".to_string(), rocksdb_path)
         } else if sqlite_path.is_file() {
@@ -135,7 +143,10 @@ impl BackupValidator {
             }
             ("sqlite".to_string(), sqlite_path)
         } else {
-            errors.push("No valid database checkpoint found: neither 'db/' nor 'data.sqlite' exists".to_string());
+            errors.push(
+                "No valid database checkpoint found: neither 'db/' nor 'data.sqlite' exists"
+                    .to_string(),
+            );
             ("unknown".to_string(), rocksdb_path)
         }
     }
@@ -177,6 +188,7 @@ impl BackupValidator {
             config_checksum: params.config_checksum.to_string(),
             channel_count: params.channel_count,
             payment_count: params.payment_count,
+            created_at: params.created_at,
         });
 
         manifest.database_present = true;
@@ -204,11 +216,8 @@ impl BackupValidator {
                     continue;
                 }
 
-                let rel_path = file_path
-                    .strip_prefix(dir)
-                    .unwrap_or(file_path)
-                    .to_string_lossy()
-                    .to_string();
+                let rel_path =
+                    file_path.strip_prefix(dir).unwrap_or(file_path).to_string_lossy().to_string();
 
                 let hash = hash_file(file_path)?;
                 let meta = fs::metadata(file_path)
@@ -217,13 +226,7 @@ impl BackupValidator {
                 bundle_hasher.update(rel_path.as_bytes());
                 bundle_hasher.update(hash.as_bytes());
 
-                files_map.insert(
-                    rel_path,
-                    FileMetadata {
-                        sha256: hash,
-                        size_bytes: meta.len(),
-                    },
-                );
+                files_map.insert(rel_path, FileMetadata { sha256: hash, size_bytes: meta.len() });
             }
         }
 

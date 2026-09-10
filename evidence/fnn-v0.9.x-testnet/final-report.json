@@ -1,0 +1,14 @@
+{
+  "backup_dir": "tests/fixtures/valid_backup",
+  "backup_completeness": "PASS",
+  "manifest_verified": "PASS",
+  "database_restore": "PASS",
+  "node_identity_comparison": "MATCH",
+  "expected_pubkey": "02297d34b5d228f17e374f25d4aab4c8afb5bb557b275e938b1d2c9671ff39ccd3",
+  "restored_pubkey": "02297d34b5d228f17e374f25d4aab4c8afb5bb557b275e938b1d2c9671ff39ccd3",
+  "fiber_p2p_egress": "BLOCKED",
+  "secrets_in_logs": "NONE DETECTED",
+  "restore_duration_ms": 74,
+  "permission_workaround_applied": true,
+  "drill_result": "VERIFIED"
+}

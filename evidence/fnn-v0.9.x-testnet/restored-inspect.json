@@ -1,0 +1,9 @@
+{
+  "channel_count": 0,
+  "check_validate_passed": true,
+  "database_opened": true,
+  "database_type": "rocksdb",
+  "payment_count": 0,
+  "restore_success": true,
+  "restored_public_key": "02297d34b5d228f17e374f25d4aab4c8afb5bb557b275e938b1d2c9671ff39ccd3"
+}

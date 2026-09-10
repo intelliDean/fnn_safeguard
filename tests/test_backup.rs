@@ -15,7 +15,7 @@ pub fn create_mock_valid_backup(dir: &TempDir) -> (String, String) {
     let pk = PublicKey::from_secret_key(&secp, &sk);
     let expected_pubkey = hex::encode(pk.serialize());
 
-    fs::write(backup_dir.join("sk"), &sk_bytes).unwrap();
+    fs::write(backup_dir.join("sk"), sk_bytes).unwrap();
 
     // 2. Dummy encrypted CKB key (108 bytes)
     let ckb_key_bytes = vec![0x42u8; 108];
@@ -37,7 +37,8 @@ fn test_backup_validation_and_manifest_generation() {
     let (backup_path, expected_pubkey) = create_mock_valid_backup(&temp_dir);
 
     // 1. Inspect and validate
-    let validation = BackupValidator::inspect_and_validate(&backup_path, Some(&expected_pubkey)).unwrap();
+    let validation =
+        BackupValidator::inspect_and_validate(&backup_path, Some(&expected_pubkey)).unwrap();
     assert!(validation.is_valid, "Validation failed: {:?}", validation.errors);
     assert_eq!(validation.database_type, "rocksdb");
     assert_eq!(validation.derived_pubkey, expected_pubkey);
@@ -51,6 +52,7 @@ fn test_backup_validation_and_manifest_generation() {
         config_checksum: "sha256:dummy_config_hash",
         channel_count: Some(12),
         payment_count: Some(45),
+        created_at: None,
         expected_pubkey: Some(&expected_pubkey),
     };
     let manifest = BackupValidator::build_manifest(&backup_path, &manifest_params).unwrap();

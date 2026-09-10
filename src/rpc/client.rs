@@ -4,7 +4,6 @@ use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_json::Value;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -95,8 +94,79 @@ impl FnnRpcClient {
         self.call_rpc("list_payments", (params,)).await
     }
 
+    /// Automatically paginates through `list_payments` using `last_cursor` until
+    /// all payments are accumulated or `max_limit` is reached.
+    pub async fn list_all_payments(
+        &self,
+        status: Option<PaymentStatus>,
+        max_limit: Option<usize>,
+    ) -> Result<Vec<PaymentInfo>> {
+        let mut all_payments = Vec::new();
+        let mut cursor: Option<String> = None;
+        let batch_size = 50u64;
+
+        loop {
+            let params =
+                ListPaymentsParams { status, limit: Some(batch_size), after: cursor.clone() };
+
+            let res = self.list_payments(Some(params)).await?;
+            if res.payments.is_empty() {
+                break;
+            }
+
+            let count = res.payments.len();
+            all_payments.extend(res.payments);
+
+            if let Some(max) = max_limit
+                && all_payments.len() >= max
+            {
+                all_payments.truncate(max);
+                break;
+            }
+
+            match res.last_cursor {
+                Some(next_cursor) if !next_cursor.is_empty() => {
+                    if cursor.as_ref() == Some(&next_cursor) {
+                        // Avoid infinite loop if cursor repeats
+                        break;
+                    }
+                    cursor = Some(next_cursor);
+                }
+                _ => break,
+            }
+
+            if (count as u64) < batch_size {
+                break;
+            }
+        }
+
+        Ok(all_payments)
+    }
+
+    /// Triggers FNN's admin backup RPC. FNN v0.9.x returns `{"jsonrpc":"2.0","result":null,"id":1}`
+    /// upon successful initiation, which is treated as success.
     pub async fn trigger_backup(&self) -> Result<()> {
-        let _: Value = self.call_rpc("backup", ()).await?;
+        let id = self.request_id.fetch_add(1, Ordering::Relaxed);
+        let req = JsonRpcRequest::new(id, "backup", ());
+
+        let resp =
+            self.client.post(&self.url).json(&req).send().await.with_context(|| {
+                format!("Failed to send backup request to FNN RPC at {}", self.url)
+            })?;
+
+        if !resp.status().is_success() {
+            bail!("FNN RPC endpoint returned HTTP status {}", resp.status().as_u16());
+        }
+
+        let json_val: serde_json::Value =
+            resp.json().await.context("Failed to parse JSON-RPC response from FNN backup call")?;
+
+        if let Some(err) = json_val.get("error")
+            && !err.is_null()
+        {
+            bail!("FNN backup RPC error: {}", err);
+        }
+
         Ok(())
     }
 }

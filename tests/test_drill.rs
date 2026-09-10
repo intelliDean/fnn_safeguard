@@ -17,11 +17,17 @@ fn test_restore_drill_with_readonly_key_permission_bug() {
     let pk = PublicKey::from_secret_key(&secp, &sk);
     let expected_pubkey = hex::encode(pk.serialize());
 
-    fs::write(backup_dir.join("sk"), &sk_bytes).unwrap();
+    fs::write(backup_dir.join("sk"), sk_bytes).unwrap();
     fs::write(backup_dir.join("key"), vec![0x11; 64]).unwrap();
 
-    // 2. Create mock SQLite database
-    fs::write(backup_dir.join("data.sqlite"), "SQLite format 3\0dummy-sql-data").unwrap();
+    // 2. Copy real RocksDB checkpoint from fixture
+    let fixture_db = std::path::Path::new("tests/fixtures/valid_backup/db");
+    let dest_db = backup_dir.join("db");
+    fs::create_dir_all(&dest_db).unwrap();
+    for entry in fs::read_dir(fixture_db).unwrap() {
+        let entry = entry.unwrap();
+        fs::copy(entry.path(), dest_db.join(entry.file_name())).unwrap();
+    }
 
     // 3. Initialize ProcessIsolationSandbox
     let sandbox = ProcessIsolationSandbox::new().unwrap();
@@ -42,9 +48,7 @@ fn test_restore_drill_with_readonly_key_permission_bug() {
         assert_eq!(PermissionManager::check_permission_mode(&pre_existing_sk).unwrap(), 0o400);
     }
 
-    // 5. Run restore drill
-    // Safeguard's PermissionManager should safely set mode 0o600 before copy,
-    // execute restore, and set back to 0o400 without crashing!
+    // 5. Run restore drill using official FNN binary
     let report = sandbox.run_restore_drill(&backup_dir, None, Some(&expected_pubkey)).unwrap();
 
     assert!(report.backup_valid);

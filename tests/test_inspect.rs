@@ -41,7 +41,8 @@ async fn test_inspect_against_mock_fnn() {
 
     // Verify ConfigSanitizer redacts secrets
     // We can run the inspect command logic or config sanitizer
-    let (hash, sanitized) = fnn_safeguard::config::ConfigSanitizer::sanitize_and_hash(&config_file).unwrap();
+    let (hash, sanitized) =
+        fnn_safeguard::config::ConfigSanitizer::sanitize_and_hash(&config_file).unwrap();
     assert!(!sanitized.contains("super_secret_token_12345"), "Auth token was not redacted!");
     assert!(!sanitized.contains("private_wallet_password_xyz"), "Password was not redacted!");
     assert!(sanitized.contains("[REDACTED]"));

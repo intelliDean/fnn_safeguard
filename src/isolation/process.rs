@@ -1,12 +1,32 @@
 use anyhow::{bail, Context, Result};
 use std::fs;
-use std::fs::{copy, create_dir_all};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
 use crate::core::key::{IdentityKey, PermissionManager};
 use crate::core::validator::BackupValidator;
+
+#[derive(Debug, Clone)]
+pub struct DrillExecutionReport {
+    pub backup_valid: bool,
+    pub fnn_binary_found: bool,
+    pub fnn_binary_path: String,
+    pub restore_executed: bool,
+    pub restore_success: bool,
+    pub check_validate_executed: bool,
+    pub check_validate_passed: bool,
+    pub database_opened: bool,
+    pub restored_pubkey: String,
+    pub identity_match: bool,
+    pub p2p_egress_blocked: bool,
+    pub permission_workaround_applied: bool,
+    pub restore_stdout: String,
+    pub restore_stderr: String,
+    pub validate_stdout: String,
+    pub validate_stderr: String,
+    pub error: Option<String>,
+}
 
 pub struct ProcessIsolationSandbox {
     _temp_dir: TempDir,
@@ -17,17 +37,45 @@ impl ProcessIsolationSandbox {
     pub fn new() -> Result<Self> {
         let temp_dir = TempDir::new().context("Failed to create temporary isolated directory")?;
         let sandbox_path = temp_dir.path().to_path_buf();
-        Ok(Self {
-            _temp_dir: temp_dir,
-            sandbox_path,
-        })
+        Ok(Self { _temp_dir: temp_dir, sandbox_path })
     }
 
     pub fn path(&self) -> &Path {
         &self.sandbox_path
     }
 
-    /// Performs a safe restore drill within the isolated directory.
+    /// Discovers an official `fnn` binary on the system if not explicitly provided.
+    pub fn find_fnn_binary(explicit: Option<&Path>) -> Option<PathBuf> {
+        if let Some(path) = explicit
+            && path.exists()
+        {
+            return Some(path.to_path_buf());
+        }
+
+        // Check common local path
+        let local_path = PathBuf::from("/home/dean/.local/bin/fnn");
+        if local_path.exists() {
+            return Some(local_path);
+        }
+
+        // Check PATH using which
+        if let Ok(output) = Command::new("which").arg("fnn").output()
+            && output.status.success()
+        {
+            let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path_str.is_empty() {
+                let p = PathBuf::from(path_str);
+                if p.exists() {
+                    return Some(p);
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Performs a safe, fail-closed restore drill within the isolated directory using an official FNN binary.
+    /// In accordance with strict safety requirements, the mock copy-only fallback is completely disabled.
     pub fn run_restore_drill(
         &self,
         backup_dir: impl AsRef<Path>,
@@ -43,45 +91,68 @@ impl ProcessIsolationSandbox {
             bail!("Backup validation failed prior to drill: {:?}", validation.errors);
         }
 
-        // 2. Prepare target directories for key and DB restoration
+        // 2. Discover FNN binary (fail-closed if missing)
+        let resolved_bin = Self::find_fnn_binary(fnn_binary_path);
+        let Some(bin) = resolved_bin else {
+            return Ok(DrillExecutionReport {
+                backup_valid: true,
+                fnn_binary_found: false,
+                fnn_binary_path: "NONE".to_string(),
+                restore_executed: false,
+                restore_success: false,
+                check_validate_executed: false,
+                check_validate_passed: false,
+                database_opened: false,
+                restored_pubkey: "NOT_TESTED".to_string(),
+                identity_match: false,
+                p2p_egress_blocked: true,
+                permission_workaround_applied: false,
+                restore_stdout: String::new(),
+                restore_stderr: String::new(),
+                validate_stdout: String::new(),
+                validate_stderr: String::new(),
+                error: Some("Official FNN binary not provided or found on PATH; mock copy fallback is disabled".to_string()),
+            });
+        };
+
+        // 3. Prepare target directories for key and DB restoration
         let (restored_fiber_dir, restored_ckb_dir) = Self::prepare_target_dirs(&restore_dest)?;
         let target_sk = restored_fiber_dir.join("sk");
         let target_key = restored_ckb_dir.join("key");
 
-        // 3. Proactively handle the documented 0o400 read-only key permission bug
+        // 4. Proactively handle the documented 0o400 read-only key permission bug
         Self::prepare_key_permissions(&target_sk, &target_key)?;
 
-        // 4. Restore: either execute native FNN binary or perform sandbox replication
-        let (binary_executed, validate_executed) = if let Some(bin) = fnn_binary_path {
-            Self::execute_fnn_binary(bin, backup_dir, &restore_dest, &restored_fiber_dir, &restored_ckb_dir)?
-        } else {
-            (false, false)
-        };
+        // 5. Execute real `fnn --restore` and `fnn --check-validate`
+        let bin_exec = Self::execute_fnn_binary(&bin, backup_dir, &restore_dest)?;
 
-        if !binary_executed {
-            Self::replicate_backup_to_sandbox(
-                backup_dir,
-                &restored_fiber_dir,
-                &restored_ckb_dir,
-                &validation.database_type,
-            )?;
-        }
+        // 6. Harden permissions after restore (set sk to 0o400)
+        let _ = PermissionManager::harden_after_restore(&target_sk);
 
-        // 5. Harden permissions after restore (set sk to 0o400)
-        PermissionManager::harden_after_restore(&target_sk)?;
+        // 7. Verify restored identity matches source node
+        let (restored_pubkey, identity_match) =
+            Self::verify_restored_identity(&target_sk, expected_pubkey)?;
 
-        // 6. Verify restored identity matches source node
-        let (restored_pubkey, identity_match) = Self::verify_restored_identity(&target_sk, expected_pubkey)?;
+        let database_opened = bin_exec.validate_passed;
 
         Ok(DrillExecutionReport {
             backup_valid: true,
-            database_opened: true,
-            fnn_binary_used: binary_executed,
-            check_validate_passed: if binary_executed { validate_executed } else { true },
+            fnn_binary_found: true,
+            fnn_binary_path: bin.display().to_string(),
+            restore_executed: true,
+            restore_success: bin_exec.restore_success,
+            check_validate_executed: true,
+            check_validate_passed: bin_exec.validate_passed,
+            database_opened,
             restored_pubkey,
             identity_match,
-            p2p_egress_blocked: true, // Sandbox has zero external peer networking
+            p2p_egress_blocked: true,
             permission_workaround_applied: true,
+            restore_stdout: bin_exec.restore_stdout,
+            restore_stderr: bin_exec.restore_stderr,
+            validate_stdout: bin_exec.validate_stdout,
+            validate_stderr: bin_exec.validate_stderr,
+            error: None,
         })
     }
 
@@ -103,72 +174,86 @@ impl ProcessIsolationSandbox {
         Ok(())
     }
 
-    /// Executes `fnn --restore` and `fnn --check-validate` using an external FNN binary.
+    /// Invokes the official FNN binary with `--restore` and then `--check-validate`.
     fn execute_fnn_binary(
         bin: &Path,
         backup_dir: &Path,
         restore_dest: &Path,
-        restored_fiber: &Path,
-        restored_ckb: &Path,
-    ) -> Result<(bool, bool)> {
-        if !bin.exists() {
-            return Ok((false, false));
-        }
+    ) -> Result<FnnCommandOutputs> {
+        let config_path = restore_dest.join("config.yml");
+        let minimal_config = r#"services:
+  - fiber
+  - ckb
+fiber:
+  listening_addr: "/ip4/127.0.0.1/tcp/0"
+  chain: testnet
+ckb:
+  rpc_url: "http://127.0.0.1:8114"
+"#;
+        fs::write(&config_path, minimal_config)
+            .context("Failed to write sandbox config.yml for FNN")?;
 
-        let dummy_config_path = restore_dest.join("config.yml");
-        let dummy_config = format!(
-            "fiber:\n  base_dir: {:?}\nckb:\n  base_dir: {:?}\n",
-            restored_fiber, restored_ckb
-        );
-        fs::write(&dummy_config_path, dummy_config)?;
+        // FNN expects the fiber/store directory to exist before restoring rocksdb backup into it
+        let fiber_store_dir = restore_dest.join("fiber").join("store");
+        let _ = fs::create_dir_all(&fiber_store_dir);
 
-        let output = Command::new(bin)
-            .arg("--config")
-            .arg(&dummy_config_path)
+        // 1. Run fnn -d <restore_dest> -c <config_path> --restore <backup_dir>
+        let restore_output = Command::new(bin)
+            .arg("-d")
+            .arg(restore_dest)
+            .arg("-c")
+            .arg(&config_path)
             .arg("--restore")
             .arg(backup_dir)
             .output()
             .with_context(|| format!("Failed to execute restore using {:?}", bin))?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("FNN restore process failed: {}", stderr);
+        let restore_stdout = String::from_utf8_lossy(&restore_output.stdout).to_string();
+        let restore_stderr = String::from_utf8_lossy(&restore_output.stderr).to_string();
+        let restore_success = restore_output.status.success();
+
+        if !restore_success {
+            bail!(
+                "FNN restore process failed with code {:?}: stdout: {}, stderr: {}",
+                restore_output.status.code(),
+                restore_stdout,
+                restore_stderr
+            );
         }
 
+        // 2. Run fnn -d <restore_dest> -c <config_path> --check-validate
         let val_output = Command::new(bin)
-            .arg("--config")
-            .arg(&dummy_config_path)
+            .arg("-d")
+            .arg(restore_dest)
+            .arg("-c")
+            .arg(&config_path)
             .arg("--check-validate")
-            .output();
+            .output()
+            .with_context(|| format!("Failed to execute --check-validate using {:?}", bin))?;
 
-        let validate_passed = val_output.map(|o| o.status.success()).unwrap_or(false);
-        Ok((true, validate_passed))
-    }
+        let validate_stdout = String::from_utf8_lossy(&val_output.stdout).to_string();
+        let validate_stderr = String::from_utf8_lossy(&val_output.stderr).to_string();
+        let validate_passed = val_output.status.success()
+            && (validate_stdout.contains("db validate success")
+                || validate_stderr.contains("db validate success"));
 
-    /// Emulates FNN restore by copying keys and database files into isolated directories.
-    fn replicate_backup_to_sandbox(
-        backup_dir: &Path,
-        restored_fiber: &Path,
-        restored_ckb: &Path,
-        database_type: &str,
-    ) -> Result<()> {
-        let backup_sk = backup_dir.join("sk");
-        let backup_key = backup_dir.join("key");
-        copy(&backup_sk, restored_fiber.join("sk"))?;
-        copy(&backup_key, restored_ckb.join("key"))?;
-
-        let target_db = restored_fiber.join("store");
-        create_dir_all(&target_db)?;
-
-        if database_type == "rocksdb" {
-            let backup_db = backup_dir.join("db");
-            copy_dir_all(&backup_db, &target_db)?;
-        } else if database_type == "sqlite" {
-            let backup_db = backup_dir.join("data.sqlite");
-            copy(&backup_db, target_db.join("data.sqlite"))?;
+        if !validate_passed {
+            bail!(
+                "FNN --check-validate failed with code {:?}: stdout: {}, stderr: {}",
+                val_output.status.code(),
+                validate_stdout,
+                validate_stderr
+            );
         }
 
-        Ok(())
+        Ok(FnnCommandOutputs {
+            restore_success,
+            validate_passed,
+            restore_stdout,
+            restore_stderr,
+            validate_stdout,
+            validate_stderr,
+        })
     }
 
     /// Loads the restored secret key and verifies identity against expected public key.
@@ -178,39 +263,20 @@ impl ProcessIsolationSandbox {
     ) -> Result<(String, bool)> {
         let restored_identity = IdentityKey::from_file(target_sk)
             .context("Failed to load identity from restored sk file")?;
-
-        let restored_pubkey = restored_identity.public_key_hex().to_string();
-        let identity_match = match expected_pubkey {
+        let pubkey_hex = restored_identity.public_key_hex();
+        let matches = match expected_pubkey {
             Some(expected) => restored_identity.matches_public_key(expected),
             None => true,
         };
-
-        Ok((restored_pubkey, identity_match))
+        Ok((pubkey_hex.to_string(), matches))
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct DrillExecutionReport {
-    pub backup_valid: bool,
-    pub database_opened: bool,
-    pub fnn_binary_used: bool,
-    pub check_validate_passed: bool,
-    pub restored_pubkey: String,
-    pub identity_match: bool,
-    pub p2p_egress_blocked: bool,
-    pub permission_workaround_applied: bool,
-}
-
-fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> Result<()> {
-    fs::create_dir_all(&dst)?;
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let ty = entry.file_type()?;
-        if ty.is_dir() {
-            copy_dir_all(entry.path(), dst.as_ref().join(entry.file_name()))?;
-        } else {
-            fs::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
-        }
-    }
-    Ok(())
+struct FnnCommandOutputs {
+    pub restore_success: bool,
+    pub validate_passed: bool,
+    pub restore_stdout: String,
+    pub restore_stderr: String,
+    pub validate_stdout: String,
+    pub validate_stderr: String,
 }

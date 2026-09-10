@@ -1,0 +1,11 @@
+{
+  "arch": "x86_64",
+  "cpu_cores": 4,
+  "docker_available": true,
+  "docker_image": "ghcr.io/nervosnetwork/fiber:latest",
+  "fnn_binary_path": "/home/dean/.local/bin/fnn",
+  "fnn_version_output": "fnn Fiber v0.9.0 (e6cb7ac-dirty 2026-08-06)",
+  "kernel": "6.12.108-1-MANJARO",
+  "os": "linux",
+  "timestamp": "2026-09-10T11:56:52.703992500+00:00"
+}

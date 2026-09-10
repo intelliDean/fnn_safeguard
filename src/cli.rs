@@ -161,6 +161,10 @@ pub struct DrillArgs {
     /// Output report in JSON format
     #[arg(long)]
     pub json: bool,
+
+    /// Directory to write comprehensive grant evidence files
+    #[arg(long)]
+    pub evidence_dir: Option<PathBuf>,
 }
 
 impl From<DrillArgs> for DrillOptions {
@@ -172,6 +176,7 @@ impl From<DrillArgs> for DrillOptions {
             use_docker: args.docker,
             docker_image: args.docker_image,
             json_output: args.json,
+            evidence_dir: args.evidence_dir,
         }
     }
 }

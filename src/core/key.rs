@@ -1,9 +1,9 @@
-use std::fmt::{Debug, Result as FmtResult};
 use anyhow::{bail, Context, Result};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
+use std::fmt::{Debug, Result as FmtResult};
 use std::fs;
-use std::path::Path;
 use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 
 #[derive(Clone)]
 pub struct IdentityKey {
@@ -28,7 +28,8 @@ impl IdentityKey {
             bail!("Secret key file does not exist at {:?}", path);
         }
 
-        let raw = fs::read(path).with_context(|| format!("Failed to read secret key file {:?}", path))?;
+        let raw =
+            fs::read(path).with_context(|| format!("Failed to read secret key file {:?}", path))?;
         Self::from_bytes(&raw).with_context(|| format!("Invalid identity key in {:?}", path))
     }
 
@@ -44,10 +45,7 @@ impl IdentityKey {
         let pubkey_bytes = pk.serialize();
         let pubkey_hex = hex::encode(pubkey_bytes);
 
-        Ok(Self {
-            pubkey_hex,
-            raw_len: raw.len(),
-        })
+        Ok(Self { pubkey_hex, raw_len: raw.len() })
     }
 
     pub fn public_key_hex(&self) -> &str {
@@ -102,8 +100,9 @@ impl PermissionManager {
         if path.exists() {
             let mut perms = fs::metadata(path)?.permissions();
             perms.set_mode(0o400);
-            fs::set_permissions(path, perms)
-                .with_context(|| format!("Failed to set 0o400 readonly permission on {:?}", path))?;
+            fs::set_permissions(path, perms).with_context(|| {
+                format!("Failed to set 0o400 readonly permission on {:?}", path)
+            })?;
         }
         Ok(())
     }

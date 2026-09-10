@@ -1,7 +1,7 @@
-use std::fmt::Display;
 use colored::{ColoredString, Colorize};
 use serde::Serialize;
 use serde_json::to_string_pretty;
+use std::fmt::Display;
 
 pub enum CheckStatus {
     Pass,

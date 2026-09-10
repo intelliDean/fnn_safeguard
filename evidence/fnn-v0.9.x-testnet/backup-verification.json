@@ -1,0 +1,11 @@
+{
+  "is_valid": true,
+  "database_type": "rocksdb",
+  "database_path": "tests/fixtures/valid_backup/db",
+  "ckb_key_path": "tests/fixtures/valid_backup/key",
+  "fiber_key_path": "tests/fixtures/valid_backup/sk",
+  "derived_pubkey": "02297d34b5d228f17e374f25d4aab4c8afb5bb557b275e938b1d2c9671ff39ccd3",
+  "total_bytes": 31383,
+  "file_count": 10,
+  "errors": []
+}

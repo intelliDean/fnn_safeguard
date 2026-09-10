@@ -1,6 +1,6 @@
 /target
-Cargo.lock
 *.log
+!evidence/**/*.log
 .DS_Store
 .idea/
 demo_env/
