@@ -39,5 +39,17 @@ jobs:
       - name: Clippy Linter
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+      - name: Install official clean FNN v0.9.0 release binary
+        run: |
+          mkdir -p bin
+          curl -sSL -o fnn_v0.9.0-x86_64-linux.tar.gz https://github.com/nervosnetwork/fiber/releases/download/v0.9.0/fnn_v0.9.0-x86_64-linux.tar.gz
+          echo "ab8591065d64474735b4812cff9131869caed9b26179470def84a9c98cdd4432  fnn_v0.9.0-x86_64-linux.tar.gz" | sha256sum -c -
+          tar -xzf fnn_v0.9.0-x86_64-linux.tar.gz
+          mv fnn_v0.9.0-x86_64-linux/fnn bin/fnn
+          chmod +x bin/fnn
+          echo "9c71faea17fa605cf0f1c5a3574bd91f408971c8142d82d0d0249ee082dee1b5  bin/fnn" | sha256sum -c -
+          echo "$PWD/bin" >> $GITHUB_PATH
+          rm -rf fnn_v0.9.0-x86_64-linux*
+
       - name: Run Test Suite
         run: cargo test --all --verbose

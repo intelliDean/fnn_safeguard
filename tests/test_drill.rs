@@ -6,6 +6,13 @@ use tempfile::TempDir;
 
 #[test]
 fn test_restore_drill_with_readonly_key_permission_bug() {
+    if ProcessIsolationSandbox::find_fnn_binary(None).is_none() {
+        eprintln!(
+            "Skipping test_restore_drill_with_readonly_key_permission_bug: fnn binary not found"
+        );
+        return;
+    }
+
     let temp_dir = TempDir::new().unwrap();
     let backup_dir = temp_dir.path().join("backup");
     fs::create_dir_all(&backup_dir).unwrap();

@@ -108,25 +108,9 @@ impl ProcessIsolationSandbox {
         // 2. Discover FNN binary (fail-closed if missing)
         let resolved_bin = Self::find_fnn_binary(fnn_binary_path);
         let Some(bin) = resolved_bin else {
-            return Ok(DrillExecutionReport {
-                backup_valid: true,
-                fnn_binary_found: false,
-                fnn_binary_path: "NONE".to_string(),
-                restore_executed: false,
-                restore_success: false,
-                check_validate_executed: false,
-                check_validate_passed: false,
-                database_opened: false,
-                restored_pubkey: "NOT_TESTED".to_string(),
-                identity_match: false,
-                p2p_egress_blocked: true,
-                permission_workaround_applied: false,
-                restore_stdout: String::new(),
-                restore_stderr: String::new(),
-                validate_stdout: String::new(),
-                validate_stderr: String::new(),
-                error: Some("Official FNN binary not provided or found on PATH; mock copy fallback is disabled".to_string()),
-            });
+            bail!(
+                "Official FNN binary not provided or found on PATH; mock copy fallback is disabled"
+            );
         };
 
         // 3. Prepare target directories for key and DB restoration
