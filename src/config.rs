@@ -81,13 +81,19 @@ mod tests {
     #[test]
     fn test_sanitize_yaml_line() {
         let line = "  auth_token: my_secret_token_123";
-        assert_eq!(ConfigSanitizer::sanitize_line(line), "  auth_token: \"[REDACTED]\"");
+        assert_eq!(
+            ConfigSanitizer::sanitize_line(line),
+            "  auth_token: \"[REDACTED]\""
+        );
     }
 
     #[test]
     fn test_sanitize_toml_line() {
         let line = "password = \"super_secret\"";
-        assert_eq!(ConfigSanitizer::sanitize_line(line), "password = \"[REDACTED]\"");
+        assert_eq!(
+            ConfigSanitizer::sanitize_line(line),
+            "password = \"[REDACTED]\""
+        );
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -37,7 +37,10 @@ impl ProcessIsolationSandbox {
     pub fn new() -> Result<Self> {
         let temp_dir = TempDir::new().context("Failed to create temporary isolated directory")?;
         let sandbox_path = temp_dir.path().to_path_buf();
-        Ok(Self { _temp_dir: temp_dir, sandbox_path })
+        Ok(Self {
+            _temp_dir: temp_dir,
+            sandbox_path,
+        })
     }
 
     pub fn path(&self) -> &Path {
@@ -52,10 +55,18 @@ impl ProcessIsolationSandbox {
             return Some(path.to_path_buf());
         }
 
-        // Check common local path
-        let local_path = PathBuf::from("/home/dean/.local/bin/fnn");
-        if local_path.exists() {
-            return Some(local_path);
+        // Check FNN_BIN environment variable
+        if let Ok(env_path) = std::env::var("FNN_BIN") {
+            let p = PathBuf::from(env_path);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+
+        // Check project-local bin/fnn
+        let project_bin = PathBuf::from("bin/fnn");
+        if project_bin.exists() {
+            return Some(project_bin);
         }
 
         // Check PATH using which
@@ -88,7 +99,10 @@ impl ProcessIsolationSandbox {
         // 1. Validate backup contents before attempting restore
         let validation = BackupValidator::inspect_and_validate(backup_dir, expected_pubkey)?;
         if !validation.is_valid {
-            bail!("Backup validation failed prior to drill: {:?}", validation.errors);
+            bail!(
+                "Backup validation failed prior to drill: {:?}",
+                validation.errors
+            );
         }
 
         // 2. Discover FNN binary (fail-closed if missing)

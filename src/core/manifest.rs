@@ -5,7 +5,7 @@ use serde_json::{from_str, to_string_pretty};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
-use std::fs::{read_to_string, File};
+use std::fs::{File, read_to_string};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
@@ -144,9 +144,17 @@ impl RecoveryManifest {
 
         // 2. Discover all actual files on disk (excluding manifest.json)
         let mut on_disk_files = BTreeMap::new();
-        for entry in WalkDir::new(dir).sort_by_file_name().into_iter().filter_map(|e| e.ok()) {
+        for entry in WalkDir::new(dir)
+            .sort_by_file_name()
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
             if entry.file_type().is_file() {
-                let rel = entry.path().strip_prefix(dir)?.to_string_lossy().to_string();
+                let rel = entry
+                    .path()
+                    .strip_prefix(dir)?
+                    .to_string_lossy()
+                    .to_string();
                 if rel == "manifest.json" {
                     continue;
                 }
@@ -262,11 +270,17 @@ mod tests {
 
         manifest.files.insert(
             "file_a.txt".to_string(),
-            FileMetadata { sha256: hash_a.clone(), size_bytes: 9 },
+            FileMetadata {
+                sha256: hash_a.clone(),
+                size_bytes: 9,
+            },
         );
         manifest.files.insert(
             "file_b.txt".to_string(),
-            FileMetadata { sha256: hash_b.clone(), size_bytes: 9 },
+            FileMetadata {
+                sha256: hash_b.clone(),
+                size_bytes: 9,
+            },
         );
 
         let mut bundle_hasher = Sha256::new();
@@ -277,7 +291,11 @@ mod tests {
         manifest.bundle_checksum = format!("sha256:{}", hex::encode(bundle_hasher.finalize()));
 
         let report = manifest.verify_against_dir(temp.path()).unwrap();
-        assert!(report.is_valid, "Verification report failed: {:?}", report.errors);
+        assert!(
+            report.is_valid,
+            "Verification report failed: {:?}",
+            report.errors
+        );
         assert_eq!(report.verified_files, 2);
 
         // Tamper test: modify file_a

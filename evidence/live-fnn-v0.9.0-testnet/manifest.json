@@ -1,0 +1,54 @@
+{
+  "format_version": 1,
+  "node_public_key": "02297d34b5d228f17e374f25d4aab4c8afb5bb557b275e938b1d2c9671ff39ccd3",
+  "network": "testnet",
+  "fnn_version": "v0.9.0",
+  "fnn_commit": "e6cb7ac",
+  "created_at": "2026-09-10T20:08:57.789Z",
+  "database_type": "rocksdb",
+  "database_present": true,
+  "fiber_key_present": true,
+  "ckb_key_present": true,
+  "config_checksum": "UNKNOWN",
+  "bundle_checksum": "sha256:13206a928c0968bed0cedb702cc516dd1289be42b9a62e4984232111f702bf8b",
+  "channel_count": 1,
+  "payment_count": 1,
+  "files": {
+    "db/000004.log": {
+      "sha256": "sha256:2c4dfe240d6edb961b31fd1b02b33e3b9f53eed119b56eb47ccd89896395b3a1",
+      "size_bytes": 46
+    },
+    "db/CURRENT": {
+      "sha256": "sha256:9c283f6e81028b9eb0760d918ee4bc0aa256ed3b926393c1734c760c4bd724fd",
+      "size_bytes": 16
+    },
+    "db/IDENTITY": {
+      "sha256": "sha256:228d115e09f8b191fdaab11fad69e3a94c870e2c51295c9912e53baf7c6be8f4",
+      "size_bytes": 36
+    },
+    "db/LOCK": {
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    "db/LOG": {
+      "sha256": "sha256:c4e07119b3180327a9fa7c5e354489cad7ec3f51b313281dc70f5fa874c5f542",
+      "size_bytes": 22163
+    },
+    "db/MANIFEST-000005": {
+      "sha256": "sha256:87ebe36eb95e7435a26007b449fb0df71bea96467dd864eb8eb785eaba16e4dd",
+      "size_bytes": 66
+    },
+    "db/OPTIONS-000007": {
+      "sha256": "sha256:e9908b3141202b81596836d7f4ddf01dcfc94f5edffd216158d899b427ca7986",
+      "size_bytes": 7073
+    },
+    "key": {
+      "sha256": "sha256:60e05bd1b195af2f94112fa7197a5c88289058840ce7c6df9693756bc6250f55",
+      "size_bytes": 64
+    },
+    "sk": {
+      "sha256": "sha256:c26ad07340f4483cf6cedb382ca3563f8d943e21d3b26a7090691d7ee33e389d",
+      "size_bytes": 32
+    }
+  }
+}

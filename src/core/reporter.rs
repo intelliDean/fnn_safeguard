@@ -31,9 +31,15 @@ pub struct TerminalReporter;
 
 impl TerminalReporter {
     pub fn header(title: &str) {
-        println!("{}", "=========================================================".cyan());
+        println!(
+            "{}",
+            "=========================================================".cyan()
+        );
         println!("  {}", title.bold().white());
-        println!("{}", "=========================================================".cyan());
+        println!(
+            "{}",
+            "=========================================================".cyan()
+        );
     }
 
     pub fn section(name: &str) {
@@ -53,13 +59,19 @@ impl TerminalReporter {
     }
 
     pub fn footer(success: bool, msg: &str) {
-        println!("{}", "---------------------------------------------------------".cyan());
+        println!(
+            "{}",
+            "---------------------------------------------------------".cyan()
+        );
         if success {
             println!("  STATUS: {}", msg.green().bold());
         } else {
             println!("  STATUS: {}", msg.red().bold());
         }
-        println!("{}\n", "=========================================================".cyan());
+        println!(
+            "{}\n",
+            "=========================================================".cyan()
+        );
     }
 
     pub fn print_json<T: Serialize>(val: &T) {

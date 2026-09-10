@@ -14,7 +14,11 @@ fn test_negative_missing_sk() {
 
     let res = BackupValidator::inspect_and_validate(&backup_dir, None).unwrap();
     assert!(!res.is_valid);
-    assert!(res.errors.iter().any(|e| e.contains("Missing Fiber identity key")));
+    assert!(
+        res.errors
+            .iter()
+            .any(|e| e.contains("Missing Fiber identity key"))
+    );
 }
 
 #[test]
@@ -28,7 +32,11 @@ fn test_negative_missing_ckb_key() {
 
     let res = BackupValidator::inspect_and_validate(&backup_dir, None).unwrap();
     assert!(!res.is_valid);
-    assert!(res.errors.iter().any(|e| e.contains("Missing CKB key file")));
+    assert!(
+        res.errors
+            .iter()
+            .any(|e| e.contains("Missing CKB key file"))
+    );
 }
 
 #[test]
@@ -42,7 +50,11 @@ fn test_negative_missing_database() {
 
     let res = BackupValidator::inspect_and_validate(&backup_dir, None).unwrap();
     assert!(!res.is_valid);
-    assert!(res.errors.iter().any(|e| e.contains("No valid database checkpoint found")));
+    assert!(
+        res.errors
+            .iter()
+            .any(|e| e.contains("No valid database checkpoint found"))
+    );
 }
 
 #[test]
@@ -69,7 +81,11 @@ fn test_negative_identity_mismatch() {
     // Validate with expected pubkey of Node 2 while backup has Node 1
     let res = BackupValidator::inspect_and_validate(&backup_dir, Some(&pubkey2)).unwrap();
     assert!(!res.is_valid);
-    assert!(res.errors.iter().any(|e| e.contains("Node public key mismatch")));
+    assert!(
+        res.errors
+            .iter()
+            .any(|e| e.contains("Node public key mismatch"))
+    );
 
     // Validate with expected pubkey of Node 1
     let res_ok = BackupValidator::inspect_and_validate(&backup_dir, Some(&pubkey1)).unwrap();
@@ -103,7 +119,10 @@ fn test_zero_secrets_in_manifest() {
 
     // Verify secret key raw hex is NOT present in the manifest JSON
     let secret_hex = hex::encode(raw_secret_bytes);
-    assert!(!json_str.contains(&secret_hex), "Raw private key was leaked into manifest JSON!");
+    assert!(
+        !json_str.contains(&secret_hex),
+        "Raw private key was leaked into manifest JSON!"
+    );
 }
 
 #[test]
@@ -132,7 +151,10 @@ fn test_negative_corrupted_rocksdb_restore_fails() {
     let result = sandbox.run_restore_drill(&backup_dir, None, None);
 
     // Fail-closed verification: must return Err or report database_opened == false
-    assert!(result.is_err(), "Restore drill must fail on corrupted RocksDB checkpoint");
+    assert!(
+        result.is_err(),
+        "Restore drill must fail on corrupted RocksDB checkpoint"
+    );
 }
 
 #[test]

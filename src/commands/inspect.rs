@@ -53,11 +53,15 @@ impl InspectCommand {
     pub async fn run(opts: InspectOptions) -> Result<InspectReport> {
         let client = FnnRpcClient::new(&opts.rpc_url, opts.auth_token)?;
 
-        let node_info =
-            client.node_info().await.context("Failed to fetch node_info from FNN RPC")?;
+        let node_info = client
+            .node_info()
+            .await
+            .context("Failed to fetch node_info from FNN RPC")?;
 
-        let channel_res =
-            client.list_channels(None).await.context("Failed to list channels from FNN RPC")?;
+        let channel_res = client
+            .list_channels(None)
+            .await
+            .context("Failed to list channels from FNN RPC")?;
         let channel_counts = Self::aggregate_channels(&channel_res.channels);
 
         let payments = client
@@ -66,7 +70,9 @@ impl InspectCommand {
             .context("Failed to query payments from FNN RPC")?;
         let total_payments = payments.len();
 
-        let config_file = opts.config_path.unwrap_or_else(|| PathBuf::from("config.yml"));
+        let config_file = opts
+            .config_path
+            .unwrap_or_else(|| PathBuf::from("config.yml"));
         let (config_checksum, _) = ConfigSanitizer::sanitize_and_hash(&config_file)?;
 
         let freshness = Self::evaluate_backup_freshness(opts.node_dir.as_deref());
@@ -107,7 +113,11 @@ impl InspectCommand {
             }
         }
 
-        ChannelCounts { ready, stale, total: channels.len() }
+        ChannelCounts {
+            ready,
+            stale,
+            total: channels.len(),
+        }
     }
 
     /// Discovers and formats backup freshness from disk.
@@ -144,7 +154,11 @@ impl InspectCommand {
             status = "PASS".to_string();
         }
 
-        BackupFreshness { latest_path: Some(path_str), age_description: age_desc, status }
+        BackupFreshness {
+            latest_path: Some(path_str),
+            age_description: age_desc,
+            status,
+        }
     }
 
     /// Formats the inspection report for terminal display or JSON.
@@ -170,7 +184,11 @@ impl InspectCommand {
         TerminalReporter::row("Latest recovery point:", &report.backup_age_description);
         TerminalReporter::status_row(
             "Recovery status:",
-            if report.recovery_status == "PASS" { CheckStatus::Pass } else { CheckStatus::Warn },
+            if report.recovery_status == "PASS" {
+                CheckStatus::Pass
+            } else {
+                CheckStatus::Warn
+            },
             None,
         );
         TerminalReporter::footer(report.recovery_status == "PASS", &report.recovery_status);

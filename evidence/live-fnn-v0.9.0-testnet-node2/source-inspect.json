@@ -1,0 +1,11 @@
+{
+  "channel_count": 2,
+  "config_checksum": "UNKNOWN",
+  "database_type": "rocksdb",
+  "fnn_commit": "e6cb7ac",
+  "fnn_version": "v0.9.0",
+  "network": "testnet",
+  "node_public_key": "02297d34b5d228f17e374f25d4aab4c8afb5bb557b275e938b1d2c9671ff39ccd3",
+  "payment_count": 3,
+  "source_backup_dir": "/mnt/data/Projects/fnn_safeguard/scratch/testnet_node2/fiber/backups/1789070950204"
+}

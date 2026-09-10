@@ -1,0 +1,11 @@
+{
+  "is_valid": true,
+  "database_type": "rocksdb",
+  "database_path": "/mnt/data/Projects/fnn_safeguard/scratch/testnet_node2/fiber/backups/1789070950204/db",
+  "ckb_key_path": "/mnt/data/Projects/fnn_safeguard/scratch/testnet_node2/fiber/backups/1789070950204/key",
+  "fiber_key_path": "/mnt/data/Projects/fnn_safeguard/scratch/testnet_node2/fiber/backups/1789070950204/sk",
+  "derived_pubkey": "02297d34b5d228f17e374f25d4aab4c8afb5bb557b275e938b1d2c9671ff39ccd3",
+  "total_bytes": 31307,
+  "file_count": 10,
+  "errors": []
+}

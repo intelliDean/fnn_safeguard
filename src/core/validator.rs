@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 use super::key::IdentityKey;
-use super::manifest::{hash_file, FileMetadata, ManifestParams, RecoveryManifest};
+use super::manifest::{FileMetadata, ManifestParams, RecoveryManifest, hash_file};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -45,7 +45,10 @@ impl BackupValidator {
     ) -> Result<BackupValidationResult> {
         let dir = backup_dir.as_ref();
         if !dir.exists() || !dir.is_dir() {
-            bail!("Backup directory does not exist or is not a directory: {:?}", dir);
+            bail!(
+                "Backup directory does not exist or is not a directory: {:?}",
+                dir
+            );
         }
 
         let mut errors = Vec::new();
@@ -98,7 +101,10 @@ impl BackupValidator {
                 }
             }
             Err(e) => {
-                errors.push(format!("Corrupt or unreadable Fiber identity key ('sk'): {}", e));
+                errors.push(format!(
+                    "Corrupt or unreadable Fiber identity key ('sk'): {}",
+                    e
+                ));
             }
         }
 
@@ -176,7 +182,10 @@ impl BackupValidator {
         let dir = backup_dir.as_ref();
         let validation = Self::inspect_and_validate(dir, params.expected_pubkey)?;
         if !validation.is_valid {
-            bail!("Cannot build manifest for invalid backup: {:?}", validation.errors);
+            bail!(
+                "Cannot build manifest for invalid backup: {:?}",
+                validation.errors
+            );
         }
 
         let mut manifest = RecoveryManifest::new(ManifestParams {
@@ -207,7 +216,11 @@ impl BackupValidator {
         let mut files_map = BTreeMap::new();
         let mut bundle_hasher = Sha256::new();
 
-        for entry in WalkDir::new(dir).sort_by_file_name().into_iter().filter_map(|e| e.ok()) {
+        for entry in WalkDir::new(dir)
+            .sort_by_file_name()
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
             if entry.file_type().is_file() {
                 let file_path = entry.path();
                 let file_name = file_path.file_name().unwrap_or_default().to_string_lossy();
@@ -216,8 +229,11 @@ impl BackupValidator {
                     continue;
                 }
 
-                let rel_path =
-                    file_path.strip_prefix(dir).unwrap_or(file_path).to_string_lossy().to_string();
+                let rel_path = file_path
+                    .strip_prefix(dir)
+                    .unwrap_or(file_path)
+                    .to_string_lossy()
+                    .to_string();
 
                 let hash = hash_file(file_path)?;
                 let meta = fs::metadata(file_path)
@@ -226,7 +242,13 @@ impl BackupValidator {
                 bundle_hasher.update(rel_path.as_bytes());
                 bundle_hasher.update(hash.as_bytes());
 
-                files_map.insert(rel_path, FileMetadata { sha256: hash, size_bytes: meta.len() });
+                files_map.insert(
+                    rel_path,
+                    FileMetadata {
+                        sha256: hash,
+                        size_bytes: meta.len(),
+                    },
+                );
             }
         }
 

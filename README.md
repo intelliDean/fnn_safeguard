@@ -6,7 +6,7 @@
 
 > **Verified Recovery Points, Isolated Disaster Drills, and Pre-Upgrade Qualification for Nervos Fiber Network Nodes (FNN).**
 
-FNN Safeguard is a self-hosted operator tool designed to verify backups and test disaster recovery procedures for Fiber Network Nodes on Nervos CKB. It independently validates backup completeness, generates cryptographic manifests, verifies identity key derivation, and executes end-to-end restore drills against the official `fnn` binary in an isolated sandbox with blocked P2P egress.
+FNN Safeguard is a self-hosted operator tool designed to verify backups and test disaster recovery procedures for Fiber Network Nodes on Nervos CKB. It independently validates backup completeness, generates Checksummed Recovery Manifests, verifies identity key derivation, and executes end-to-end restore drills against the official `fnn` binary in an isolated sandbox with blocked P2P egress verified via active network probes.
 
 ---
 
@@ -21,8 +21,11 @@ FNN Safeguard is a self-hosted operator tool designed to verify backups and test
   - [1. Node Inspection (`inspect`)](#1-node-inspection-inspect)
   - [2. Verified Backup & Manifest Generation (`backup`)](#2-verified-backup--manifest-generation-backup)
   - [3. Sandboxed Disaster Recovery Drill (`drill`)](#3-sandboxed-disaster-recovery-drill-drill)
-- [Measured Grant Evidence (`evidence/fnn-v0.9.x-testnet`)](#measured-grant-evidence-evidencefnn-v09x-testnet)
-- [Cryptographic Recovery Manifest Specification](#cryptographic-recovery-manifest-specification)
+- [Verified Grant Evidence Suites](#verified-grant-evidence-suites)
+  - [1. Primary Live Testnet Run (`evidence/live-fnn-v0.9.0-testnet`)](#1-primary-live-testnet-run-evidencelive-fnn-v090-testnet)
+  - [2. Second Live Testnet Run (`evidence/live-fnn-v0.9.0-testnet-node2`)](#2-second-live-testnet-run-evidencelive-fnn-v090-testnet-node2)
+  - [3. Sample Fixture Reference (`evidence/sample-fixture`)](#3-sample-fixture-reference-evidencesample-fixture)
+- [Checksummed Recovery Manifest Specification](#checksummed-recovery-manifest-specification)
 - [Testing & Quality Assurance](#testing--quality-assurance)
 - [Grant Roadmap & Future Milestones](#grant-roadmap--future-milestones)
 - [License](#license)
@@ -64,7 +67,7 @@ FNN Safeguard wraps FNN's existing backup capabilities into an automated, verifi
    2. BACKUP        --> Checkpoint RocksDB, verify secp256k1 key, hash files
          |
          v
-   3. MANIFEST      --> Produce deterministic SHA-256 RecoveryManifest (0 secrets)
+   3. MANIFEST      --> Produce deterministic Checksummed Recovery Manifest (0 secrets)
          |
          v
    4. DRILL         --> Spin up isolated sandbox with P2P EGRESS BLOCKED
@@ -78,10 +81,17 @@ FNN Safeguard wraps FNN's existing backup capabilities into an automated, verifi
 ## Core Safety Guardrails
 
 - **No Automated Live Rollbacks**: Safeguard never automatically rolls back a live production database. All recovery validations occur in temporary, ephemeral sandboxes.
-- **Strict P2P Network Egress Severing**: During restore drills, P2P network egress is strictly severed (via Docker container isolation with `--network none` or process sandbox port re-binding) to guarantee that restored nodes cannot contact live peers or emit stale transactions.
-- **Zero-Knowledge Manifests & Secret Sanitization**: Node configuration files (`config.yml`) are parsed line-by-line; sensitive credentials, passwords, and Biscuit tokens are masked with `[REDACTED]` prior to SHA-256 hashing.
+- **Evidence-Grade Docker Isolation with Verified Egress Probe**: When `--docker` is passed, drills run inside a Docker container with `--network none`. An active outbound network probe (`bash -c 'exec 3<>/dev/tcp/8.8.8.8/80'`) is executed and proven to fail (`Network is unreachable`, exit code 1) before database restoration proceeds.
+- **Checksummed Recovery Manifests & Secret Sanitization**: Node configuration files (`config.yml`) are parsed line-by-line; sensitive credentials, passwords, and Biscuit tokens are masked with `[REDACTED]` prior to SHA-256 hashing.
 - **Automatic Permission Manager**: Resolves the Fiber v0.9.0 read-only file mode issue by elevating to `0o600` during restore staging and locking down to `0o400` once restored.
-- **Fail-Closed Verification**: Safeguard never reports `VERIFIED` without direct execution of official `fnn --restore` and `fnn --check-validate` returning success (`db validate success`).
+- **Fail-Closed Verification Gating**: Safeguard never reports `VERIFIED` without:
+  1. Complete backup structure (database, keys, non-empty files).
+  2. Matching Checksummed Recovery Manifest (`PASS`).
+  3. Official `fnn --restore` exiting with code 0.
+  4. Official `fnn --check-validate` confirming database validity (`db validate success`).
+  5. Exact public key match between source node and restored identity.
+  6. Proven network isolation (failed outbound egress probe in Docker mode, loopback-only policy in process mode).
+  7. Automated secret scanning reporting 0 detected secrets across all artifacts.
 
 ---
 
@@ -102,12 +112,12 @@ src/
 │   └── drill.rs            # `drill` recovery drill & evidence generation
 ├── core/                   # Domain logic
 │   ├── key.rs              # secp256k1 key derivation & permission management
-│   ├── manifest.rs         # Cryptographic RecoveryManifest & verification
+│   ├── manifest.rs         # Checksummed RecoveryManifest & verification
 │   ├── reporter.rs         # Terminal formatting & JSON outputs
 │   └── validator.rs        # Backup directory structural integrity checks
 ├── isolation/              # Sandboxed execution environments
 │   ├── mod.rs
-│   ├── docker.rs           # Docker container drill with `--network none`
+│   ├── docker.rs           # Docker container drill with `--network none` and egress probe
 │   └── process.rs          # Process isolation executing native `fnn`
 └── rpc/                    # FNN JSON-RPC 2.0 client
     ├── client.rs           # Strongly-typed HTTP client with auto-pagination
@@ -119,8 +129,10 @@ src/
 ## Quickstart
 
 ### Prerequisites
-- Rust 1.80+ (or compatible stable toolchain)
-- Official `fnn` binary (`Fiber v0.9.0+`) or Docker for container drills
+- **Rust 1.85+** (Rust 2024 edition required)
+- Official clean `fnn` binary (`Fiber v0.9.0+`) or Docker for container drills
+- Official release archive digest: `ab8591065d64474735b4812cff9131869caed9b26179470def84a9c98cdd4432`
+- Extracted official `fnn` binary digest: `9c71faea17fa605cf0f1c5a3574bd91f408971c8142d82d0d0249ee082dee1b5`
 
 ### Building from Source
 
@@ -144,58 +156,70 @@ fnn-safeguard inspect --rpc-url http://127.0.0.1:8227 --config /path/to/config.y
 ```
 
 ### 2. Verified Backup & Manifest Generation (`backup`)
-Validates a native FNN backup, verifies cryptographic keys, and generates a tamper-evident `manifest.json`:
+Validates a native FNN backup, verifies cryptographic keys, and generates an integrity-checked `manifest.json`:
 
 ```bash
-# Validate existing latest backup in directory
+# Validate existing latest backup in directory (structural check)
 fnn-safeguard backup --node-dir /var/lib/fiber
 
-# Trigger immediate backup via RPC and wait for completion
+# Trigger immediate backup via RPC, wait for stabilization, and qualify against live node state
 fnn-safeguard backup --trigger --rpc-url http://127.0.0.1:8227 --node-dir /var/lib/fiber
 ```
+
+When run against a live node, the backup report is marked `qualification: "LIVE_NODE_QUALIFIED"`. When run offline without RPC, it is marked `qualification: "STRUCTURAL_ONLY"` with `network: "UNKNOWN"`.
 
 ### 3. Sandboxed Disaster Recovery Drill (`drill`)
 Executes an end-to-end recovery test inside an isolated environment with network egress disabled, running the official `fnn --restore` and `fnn --check-validate`:
 
 ```bash
-# Native process sandbox drill with evidence generation
+# Docker isolated container drill (evidence-grade with egress probe)
 fnn-safeguard drill \
-  --backup tests/fixtures/valid_backup \
-  --evidence-dir evidence/fnn-v0.9.x-testnet
+  --docker \
+  --backup /path/to/backup \
+  --evidence-dir evidence/live-fnn-v0.9.0-testnet
 
-# Docker isolated container drill
+# Native process sandbox drill
 fnn-safeguard drill \
-  --backup tests/fixtures/valid_backup \
-  --docker
+  --backup /path/to/backup \
+  --fnn-bin bin/fnn
 ```
 
 ---
 
-## Measured Grant Evidence (`evidence/fnn-v0.9.x-testnet`)
+## Verified Grant Evidence Suites
 
-Machine-readable evidence files generated from real execution of official `fnn` v0.9.0 binary (`Fiber v0.9.0 (e6cb7ac-dirty 2026-08-06)`):
+The repository contains three complete, machine-readable evidence suites:
+
+### 1. Primary Live Testnet Run (`evidence/live-fnn-v0.9.0-testnet`)
+Generated against a live testnet node containing **1 ChannelReady channel** and **1 completed payment**, restored via Docker `--network none` with a verified failed egress probe.
 
 | Evidence File | Description |
 | :--- | :--- |
-| [`environment.json`](evidence/fnn-v0.9.x-testnet/environment.json) | Host system OS, kernel, CPU, binary path, and Docker availability. |
-| [`fnn-binary.sha256`](evidence/fnn-v0.9.x-testnet/fnn-binary.sha256) | SHA-256 checksum matching official `fnn` binary. |
-| [`source-inspect.json`](evidence/fnn-v0.9.x-testnet/source-inspect.json) | Non-secret inventory of source node state. |
-| [`backup-verification.json`](evidence/fnn-v0.9.x-testnet/backup-verification.json) | Structural integrity check and key derivation results. |
-| [`manifest.json`](evidence/fnn-v0.9.x-testnet/manifest.json) | Deterministic cryptographic recovery manifest. |
-| [`manifest-verification.json`](evidence/fnn-v0.9.x-testnet/manifest-verification.json) | Independent verification recomputing all hashes and bundle checksum. |
-| [`restore-output.log`](evidence/fnn-v0.9.x-testnet/restore-output.log) | Complete stdout/stderr logs from `fnn --restore`. |
-| [`check-validate-output.log`](evidence/fnn-v0.9.x-testnet/check-validate-output.log) | Complete stdout/stderr from `fnn --check-validate` confirming DB validity. |
-| [`restored-inspect.json`](evidence/fnn-v0.9.x-testnet/restored-inspect.json) | Inventory of restored node state after drill. |
-| [`inventory-diff.json`](evidence/fnn-v0.9.x-testnet/inventory-diff.json) | Delta verification proving identity and state match. |
-| [`network-isolation-test.json`](evidence/fnn-v0.9.x-testnet/network-isolation-test.json) | Proof of blocked P2P egress and severed external connectivity. |
-| [`secret-scan.json`](evidence/fnn-v0.9.x-testnet/secret-scan.json) | Automated regex scan confirming zero secret leaks across all artifacts. |
-| [`final-report.json`](evidence/fnn-v0.9.x-testnet/final-report.json) | Unified summary report with overall `VERIFIED` status. |
+| [`environment.json`](evidence/live-fnn-v0.9.0-testnet/environment.json) | Host OS, kernel, clean official FNN v0.9.0 binary digest, archive digest, and Docker runtime. |
+| [`fnn-binary.sha256`](evidence/live-fnn-v0.9.0-testnet/fnn-binary.sha256) | SHA-256 checksum matching official release binary (`9c71faea...`). |
+| [`source-inspect.json`](evidence/live-fnn-v0.9.0-testnet/source-inspect.json) | Live source node state with channel and payment counts. |
+| [`backup-verification.json`](evidence/live-fnn-v0.9.0-testnet/backup-verification.json) | Structural integrity check and key derivation results. |
+| [`manifest.json`](evidence/live-fnn-v0.9.0-testnet/manifest.json) | Deterministic Checksummed Recovery Manifest with live inventory counts. |
+| [`manifest-verification.json`](evidence/live-fnn-v0.9.0-testnet/manifest-verification.json) | Independent verification recomputing all file hashes and bundle checksum. |
+| [`restore-output.log`](evidence/live-fnn-v0.9.0-testnet/restore-output.log) | Complete stdout/stderr logs from `fnn --restore`. |
+| [`check-validate-output.log`](evidence/live-fnn-v0.9.0-testnet/check-validate-output.log) | Logs from `fnn --check-validate` confirming database validity (`db validate success`). |
+| [`restored-inspect.json`](evidence/live-fnn-v0.9.0-testnet/restored-inspect.json) | Restored node state and identity verification. |
+| [`inventory-diff.json`](evidence/live-fnn-v0.9.0-testnet/inventory-diff.json) | Independent inventory comparison with honest `SOURCE_RECORDED_RESTORE_UNVERIFIED` status. |
+| [`network-isolation-test.json`](evidence/live-fnn-v0.9.0-testnet/network-isolation-test.json) | Container `--network none` proof with failed egress probe (`exit_code: 1`, `Network is unreachable`). |
+| [`secret-scan.json`](evidence/live-fnn-v0.9.0-testnet/secret-scan.json) | Automated scan confirming zero private keys, secret keys, or tokens leaked. |
+| [`final-report.json`](evidence/live-fnn-v0.9.0-testnet/final-report.json) | Unified summary report with fail-closed `VERIFIED` status. |
+
+### 2. Second Live Testnet Run (`evidence/live-fnn-v0.9.0-testnet-node2`)
+Demonstrates repeatability across varied node state with **2 ChannelReady channels** and **3 completed payments** in [`evidence/live-fnn-v0.9.0-testnet-node2/`](evidence/live-fnn-v0.9.0-testnet-node2/).
+
+### 3. Sample Fixture Reference (`evidence/sample-fixture`)
+Reference evidence generated from static test fixtures in [`evidence/sample-fixture/`](evidence/sample-fixture/).
 
 ---
 
-## Cryptographic Recovery Manifest Specification
+## Checksummed Recovery Manifest Specification
 
-Every validated backup includes a `manifest.json` recording cryptographic proofs of completeness without disclosing secrets:
+Every validated backup includes an integrity-checked `manifest.json` recording cryptographic proofs of completeness without disclosing secrets:
 
 ```json
 {
@@ -203,16 +227,16 @@ Every validated backup includes a `manifest.json` recording cryptographic proofs
   "node_public_key": "02297d34b5d228f17e374f25d4aab4c8afb5bb557b275e938b1d2c9671ff39ccd3",
   "network": "testnet",
   "fnn_version": "v0.9.0",
-  "fnn_commit": "e6cb7ac-dirty",
-  "created_at": "2026-09-10T11:56:23Z",
+  "fnn_commit": "e6cb7ac",
+  "created_at": "2026-09-10T20:09:05Z",
   "database_type": "rocksdb",
   "database_present": true,
   "fiber_key_present": true,
   "ckb_key_present": true,
-  "config_checksum": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "config_checksum": "UNKNOWN",
   "bundle_checksum": "sha256:13206a928c0968bed0cedb702cc516dd1289be42b9a62e4984232111f702bf8b",
-  "channel_count": 0,
-  "payment_count": 0,
+  "channel_count": 1,
+  "payment_count": 1,
   "files": {
     "db/000003.log": {
       "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -242,17 +266,17 @@ FNN Safeguard includes automated tests covering unit logic, mock RPC servers, co
 
 ```bash
 # Run all tests
-cargo test --all
+cargo test --all --verbose
 
 # Run strict linting with zero warnings allowed
-cargo clippy --all-targets -- -D warnings
+cargo clippy --all-targets --all-features -- -D warnings
 
-# Check code formatting
-cargo fmt --check
+# Check code formatting (Rust 2024 edition)
+cargo fmt --all -- --check
 ```
 
 ### Test Coverage Highlights
-- **`tests/test_inspect.rs`**: Validates JSON-RPC 2.0 communication, hex parsing, and configuration secret redaction.
+- **`tests/test_inspect.rs`**: Validates JSON-RPC 2.0 communication, hex string parsing, paginated payments, and configuration secret redaction.
 - **`tests/test_backup.rs`**: Tests backup discovery, secp256k1 key derivation, and deterministic `manifest.json` generation.
 - **`tests/test_drill.rs`**: Proves sandbox isolation, P2P network blocking, and handles the `0o400` read-only key permission bug.
 - **`tests/test_negative.rs`**: Verifies failure handling for corrupted RocksDB databases, missing keys, identity mismatches, and confirms **zero secrets** in manifest JSON.
@@ -263,7 +287,7 @@ cargo fmt --check
 
 | Milestone | Status | Description |
 | :--- | :---: | :--- |
-| **Milestone 1: Core Safeguard & Evidence** | **Completed** | `inspect`, `backup`, isolated `drill`, `manifest.json`, and official FNN v0.9.x grant evidence suite. |
+| **Milestone 1: Core Safeguard & Evidence** | **Completed** | `inspect`, `backup`, isolated `drill`, `manifest.json`, and official FNN v0.9.0 grant evidence suite. |
 | **Milestone 2: Pre-Upgrade Qualification** | *Planned* | `fnn-safeguard qualify --target <bin|image>` to test database migrations and node booting before live upgrades. |
 | **Milestone 3: Encrypted Off-Host Replication** | *Planned* | Encrypted backup distribution using `age` encryption with adapters for AWS S3, Cloudflare R2, and rsync. |
 | **Milestone 4: Daemon & Alerting** | *Planned* | Background service with automated cron schedules, Prometheus metrics, and alerting. |

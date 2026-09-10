@@ -1,0 +1,13 @@
+{
+  "egress_probe_attempted": true,
+  "egress_probe_command": "bash -c 'exec 3<>/dev/tcp/8.8.8.8/80'",
+  "egress_probe_error": "bash: connect: Network is unreachable\nbash: line 1: /dev/tcp/8.8.8.8/80: Network is unreachable",
+  "egress_probe_result": "BLOCKED",
+  "egress_probe_target": "8.8.8.8:80",
+  "exit_code": 1,
+  "isolated": true,
+  "isolation_level": "CONTAINER_NETWORK_NONE",
+  "isolation_method": "docker",
+  "network_mode": "none",
+  "p2p_egress_policy": "BLOCKED"
+}

@@ -1,0 +1,16 @@
+{
+  "arch": "x86_64",
+  "cpu_cores": 4,
+  "docker_available": true,
+  "docker_image": "ghcr.io/nervosnetwork/fiber:latest",
+  "fnn_archive_filename": "fnn_v0.9.0-x86_64-linux.tar.gz",
+  "fnn_binary_path": "bin/fnn",
+  "fnn_downloaded_archive_digest": "ab8591065d64474735b4812cff9131869caed9b26179470def84a9c98cdd4432",
+  "fnn_extracted_binary_digest": "9c71faea17fa605cf0f1c5a3574bd91f408971c8142d82d0d0249ee082dee1b5",
+  "fnn_official_archive_digest": "ab8591065d64474735b4812cff9131869caed9b26179470def84a9c98cdd4432",
+  "fnn_release_tag": "v0.9.0",
+  "fnn_version_output": "fnn Fiber v0.9.0 (e6cb7ac 2026-08-06)",
+  "kernel": "6.12.108-1-MANJARO",
+  "os": "linux",
+  "timestamp": "2026-09-10T20:09:22.588828540+00:00"
+}

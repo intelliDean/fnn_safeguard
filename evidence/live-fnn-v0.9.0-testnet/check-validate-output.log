@@ -1,0 +1,6 @@
+=== FNN Check Validate Stdout ===
+db validate success
+
+=== FNN Check Validate Stderr ===
+Current database version: [20260618120000], latest db version: [20260618120000]
+

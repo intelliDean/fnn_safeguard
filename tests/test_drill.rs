@@ -45,11 +45,16 @@ fn test_restore_drill_with_readonly_key_permission_bug() {
         let mut perms = fs::metadata(&pre_existing_sk).unwrap().permissions();
         perms.set_mode(0o400); // READ-ONLY!
         fs::set_permissions(&pre_existing_sk, perms).unwrap();
-        assert_eq!(PermissionManager::check_permission_mode(&pre_existing_sk).unwrap(), 0o400);
+        assert_eq!(
+            PermissionManager::check_permission_mode(&pre_existing_sk).unwrap(),
+            0o400
+        );
     }
 
     // 5. Run restore drill using official FNN binary
-    let report = sandbox.run_restore_drill(&backup_dir, None, Some(&expected_pubkey)).unwrap();
+    let report = sandbox
+        .run_restore_drill(&backup_dir, None, Some(&expected_pubkey))
+        .unwrap();
 
     assert!(report.backup_valid);
     assert!(report.database_opened);
@@ -61,6 +66,9 @@ fn test_restore_drill_with_readonly_key_permission_bug() {
     // Verify final permission on restored sk is hardened to 0o400
     #[cfg(unix)]
     {
-        assert_eq!(PermissionManager::check_permission_mode(&pre_existing_sk).unwrap(), 0o400);
+        assert_eq!(
+            PermissionManager::check_permission_mode(&pre_existing_sk).unwrap(),
+            0o400
+        );
     }
 }

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use chrono::{DateTime, Utc};
 use colored::Colorize;
 use serde::Serialize;
@@ -29,6 +29,7 @@ pub struct BackupOptions {
 pub struct BackupVerificationReport {
     pub backup_dir: String,
     pub is_valid: bool,
+    pub qualification: String,
     pub node_public_key: String,
     pub network: String,
     pub fnn_version: String,
@@ -72,7 +73,9 @@ impl BackupCommand {
         let validation =
             BackupValidator::inspect_and_validate(&resolved_dir, opts.expected_pubkey.as_deref())?;
 
-        let config_file = opts.config_path.unwrap_or_else(|| PathBuf::from("config.yml"));
+        let config_file = opts
+            .config_path
+            .unwrap_or_else(|| PathBuf::from("config.yml"));
         let (config_checksum, _) = ConfigSanitizer::sanitize_and_hash(&config_file)
             .unwrap_or_else(|_| ("sha256:unknown".to_string(), String::new()));
 
@@ -96,12 +99,19 @@ impl BackupCommand {
         combined_errors.extend(manifest_errors);
         let overall_valid = validation.is_valid && manifest_verified && combined_errors.is_empty();
 
-        let network = live_data.network.unwrap_or_else(|| "mainnet".to_string());
-        let version = live_data.version.unwrap_or_else(|| "v0.9.0".to_string());
+        let is_live = live_data.version.is_some() && live_data.network.is_some();
+        let qualification = if is_live {
+            "LIVE_NODE_QUALIFIED".to_string()
+        } else {
+            "STRUCTURAL_ONLY".to_string()
+        };
+        let network = live_data.network.unwrap_or_else(|| "UNKNOWN".to_string());
+        let version = live_data.version.unwrap_or_else(|| "UNKNOWN".to_string());
 
         let report = BackupVerificationReport {
             backup_dir: resolved_dir.display().to_string(),
             is_valid: overall_valid,
+            qualification,
             node_public_key: validation.derived_pubkey.clone(),
             network,
             fnn_version: version,
@@ -144,8 +154,11 @@ impl BackupCommand {
         };
 
         let ready_channels = if let Ok(ch_res) = client.list_channels(None).await {
-            let ready_count =
-                ch_res.channels.iter().filter(|ch| ch.state.is_ready()).count() as u32;
+            let ready_count = ch_res
+                .channels
+                .iter()
+                .filter(|ch| ch.state.is_ready())
+                .count() as u32;
             Some(ready_count)
         } else {
             None
@@ -171,7 +184,10 @@ impl BackupCommand {
     async fn trigger_admin_backup(rpc_url: Option<&str>, auth_token: Option<String>) -> Result<()> {
         let url = rpc_url.unwrap_or("http://127.0.0.1:8227");
         let client = FnnRpcClient::new(url, auth_token)?;
-        client.trigger_backup().await.context("Failed to trigger FNN admin backup via RPC")?;
+        client
+            .trigger_backup()
+            .await
+            .context("Failed to trigger FNN admin backup via RPC")?;
         Ok(())
     }
 
@@ -229,7 +245,9 @@ impl BackupCommand {
             }
             sleep(Duration::from_millis(200)).await;
         }
-        bail!("Timed out waiting for newly created FNN backup directory after RPC trigger; refusing to fall back to older backups");
+        bail!(
+            "Timed out waiting for newly created FNN backup directory after RPC trigger; refusing to fall back to older backups"
+        );
     }
 
     /// Confirms that db/CURRENT or data.sqlite, sk, and key exist and stop changing before verification.
@@ -258,7 +276,10 @@ impl BackupCommand {
             }
             sleep(Duration::from_millis(150)).await;
         }
-        bail!("Backup directory {:?} failed to stabilize required files (db/CURRENT, sk, key) within timeout", dir);
+        bail!(
+            "Backup directory {:?} failed to stabilize required files (db/CURRENT, sk, key) within timeout",
+            dir
+        );
     }
 
     fn calculate_dir_size(dir: &Path) -> u64 {
@@ -303,9 +324,9 @@ impl BackupCommand {
         created_at: Option<DateTime<Utc>>,
         expected_pubkey: Option<&str>,
     ) -> Result<(String, String, bool, Vec<String>)> {
-        let network = live_data.network.as_deref().unwrap_or("mainnet");
-        let version = live_data.version.as_deref().unwrap_or("v0.9.0");
-        let commit = live_data.commit.as_deref().unwrap_or("e6cb7ac");
+        let network = live_data.network.as_deref().unwrap_or("UNKNOWN");
+        let version = live_data.version.as_deref().unwrap_or("UNKNOWN");
+        let commit = live_data.commit.as_deref().unwrap_or("UNKNOWN");
 
         let params = BuildManifestParams {
             network,
@@ -340,9 +361,21 @@ impl BackupCommand {
 
         TerminalReporter::header("FNN Safeguard: Backup Verification Report");
         TerminalReporter::row("Backup directory:", &report.backup_dir);
+        TerminalReporter::row(
+            "Qualification:",
+            if report.qualification == "LIVE_NODE_QUALIFIED" {
+                report.qualification.green().bold()
+            } else {
+                report.qualification.yellow().bold()
+            },
+        );
         TerminalReporter::status_row(
             "Backup completeness:",
-            if report.is_valid { CheckStatus::Pass } else { CheckStatus::Fail },
+            if report.is_valid {
+                CheckStatus::Pass
+            } else {
+                CheckStatus::Fail
+            },
             None,
         );
         TerminalReporter::row("Database type:", &report.database_type);
@@ -350,7 +383,11 @@ impl BackupCommand {
         TerminalReporter::row("FNN version:", &report.fnn_version);
         TerminalReporter::row(
             "Node public key:",
-            if report.node_public_key.is_empty() { "N/A" } else { &report.node_public_key },
+            if report.node_public_key.is_empty() {
+                "N/A"
+            } else {
+                &report.node_public_key
+            },
         );
         TerminalReporter::row(
             "Total files / size:",

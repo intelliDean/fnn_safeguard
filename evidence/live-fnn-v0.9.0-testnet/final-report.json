@@ -1,0 +1,16 @@
+{
+  "backup_dir": "/mnt/data/Projects/fnn_safeguard/scratch/testnet_node1/fiber/backups/1789070937789",
+  "backup_completeness": "PASS",
+  "manifest_verified": "PASS",
+  "database_restore": "PASS",
+  "node_identity_comparison": "MATCH",
+  "expected_pubkey": "02297d34b5d228f17e374f25d4aab4c8afb5bb557b275e938b1d2c9671ff39ccd3",
+  "restored_pubkey": "02297d34b5d228f17e374f25d4aab4c8afb5bb557b275e938b1d2c9671ff39ccd3",
+  "channel_inventory": "SOURCE: 1 (Restored: offline DB unqueried)",
+  "payment_inventory": "SOURCE: 1 (Restored: offline DB unqueried)",
+  "fiber_p2p_egress": "BLOCKED (Container --network none verified via egress probe)",
+  "secrets_in_logs": "NONE DETECTED",
+  "restore_duration_ms": 2319,
+  "permission_workaround_applied": true,
+  "drill_result": "VERIFIED"
+}

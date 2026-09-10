@@ -13,7 +13,12 @@ pub struct JsonRpcRequest<T> {
 
 impl<T: Serialize> JsonRpcRequest<T> {
     pub fn new(id: u64, method: impl Into<String>, params: T) -> Self {
-        Self { jsonrpc: "2.0".to_string(), id, method: method.into(), params }
+        Self {
+            jsonrpc: "2.0".to_string(),
+            id,
+            method: method.into(),
+            params,
+        }
     }
 }
 
@@ -65,14 +70,18 @@ pub mod hex_or_int_u32 {
                 .ok_or_else(|| serde::de::Error::custom("invalid integer for u32")),
             serde_json::Value::String(s) => {
                 let trimmed = s.trim();
-                if let Some(hex) = trimmed.strip_prefix("0x").or_else(|| trimmed.strip_prefix("0X"))
+                if let Some(hex) = trimmed
+                    .strip_prefix("0x")
+                    .or_else(|| trimmed.strip_prefix("0X"))
                 {
                     u32::from_str_radix(hex, 16).map_err(serde::de::Error::custom)
                 } else {
                     trimmed.parse::<u32>().map_err(serde::de::Error::custom)
                 }
             }
-            _ => Err(serde::de::Error::custom("expected integer or hex string for u32")),
+            _ => Err(serde::de::Error::custom(
+                "expected integer or hex string for u32",
+            )),
         }
     }
 }
@@ -93,19 +102,23 @@ pub mod hex_or_int_u64 {
     {
         let val = serde_json::Value::deserialize(deserializer)?;
         match val {
-            serde_json::Value::Number(n) => {
-                n.as_u64().ok_or_else(|| serde::de::Error::custom("invalid integer for u64"))
-            }
+            serde_json::Value::Number(n) => n
+                .as_u64()
+                .ok_or_else(|| serde::de::Error::custom("invalid integer for u64")),
             serde_json::Value::String(s) => {
                 let trimmed = s.trim();
-                if let Some(hex) = trimmed.strip_prefix("0x").or_else(|| trimmed.strip_prefix("0X"))
+                if let Some(hex) = trimmed
+                    .strip_prefix("0x")
+                    .or_else(|| trimmed.strip_prefix("0X"))
                 {
                     u64::from_str_radix(hex, 16).map_err(serde::de::Error::custom)
                 } else {
                     trimmed.parse::<u64>().map_err(serde::de::Error::custom)
                 }
             }
-            _ => Err(serde::de::Error::custom("expected integer or hex string for u64")),
+            _ => Err(serde::de::Error::custom(
+                "expected integer or hex string for u64",
+            )),
         }
     }
 }
@@ -132,14 +145,18 @@ pub mod hex_or_int_u128 {
                 .ok_or_else(|| serde::de::Error::custom("invalid integer for u128")),
             serde_json::Value::String(s) => {
                 let trimmed = s.trim();
-                if let Some(hex) = trimmed.strip_prefix("0x").or_else(|| trimmed.strip_prefix("0X"))
+                if let Some(hex) = trimmed
+                    .strip_prefix("0x")
+                    .or_else(|| trimmed.strip_prefix("0X"))
                 {
                     u128::from_str_radix(hex, 16).map_err(serde::de::Error::custom)
                 } else {
                     trimmed.parse::<u128>().map_err(serde::de::Error::custom)
                 }
             }
-            _ => Err(serde::de::Error::custom("expected integer or hex string for u128")),
+            _ => Err(serde::de::Error::custom(
+                "expected integer or hex string for u128",
+            )),
         }
     }
 }
@@ -285,12 +302,59 @@ impl PaymentStatus {
     }
 }
 
+pub mod opt_hex_or_int_u64 {
+    use super::*;
+
+    pub fn serialize<S>(val: &Option<u64>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match val {
+            Some(n) => serializer.serialize_str(&format!("0x{:x}", n)),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let opt = Option::<serde_json::Value>::deserialize(deserializer)?;
+        match opt {
+            Some(serde_json::Value::Number(n)) => n
+                .as_u64()
+                .map(Some)
+                .ok_or_else(|| serde::de::Error::custom("invalid integer for u64")),
+            Some(serde_json::Value::String(s)) => {
+                let trimmed = s.trim();
+                if let Some(hex) = trimmed
+                    .strip_prefix("0x")
+                    .or_else(|| trimmed.strip_prefix("0X"))
+                {
+                    u64::from_str_radix(hex, 16)
+                        .map(Some)
+                        .map_err(serde::de::Error::custom)
+                } else {
+                    trimmed
+                        .parse::<u64>()
+                        .map(Some)
+                        .map_err(serde::de::Error::custom)
+                }
+            }
+            Some(serde_json::Value::Null) | None => Ok(None),
+            _ => Err(serde::de::Error::custom(
+                "expected integer, hex string, or null for u64",
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PaymentInfo {
     pub payment_hash: String,
     #[serde(default)]
     pub status: Option<PaymentStatus>,
-    #[serde(default)]
+    #[serde(default, with = "opt_hex_or_int_u64")]
     pub created_at: Option<u64>,
 }
 
@@ -298,7 +362,11 @@ pub struct PaymentInfo {
 pub struct ListPaymentsParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<PaymentStatus>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "opt_hex_or_int_u64"
+    )]
     pub limit: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub after: Option<String>,
@@ -310,4 +378,51 @@ pub struct ListPaymentsResult {
     pub payments: Vec<PaymentInfo>,
     #[serde(default)]
     pub last_cursor: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_payment_info_hex_and_int_created_at() {
+        let json_hex =
+            r#"{"payment_hash":"0xabc","status":"Success","created_at":"0x191e4f29f40"}"#;
+        let payment: PaymentInfo = serde_json::from_str(json_hex).unwrap();
+        assert_eq!(payment.payment_hash, "0xabc");
+        assert_eq!(payment.status, Some(PaymentStatus::Success));
+        assert_eq!(payment.created_at, Some(1726122991424));
+
+        let json_int = r#"{"payment_hash":"0xabc","status":"Success","created_at":1726122991424}"#;
+        let payment_int: PaymentInfo = serde_json::from_str(json_int).unwrap();
+        assert_eq!(payment_int.created_at, Some(1726122991424));
+
+        let json_null = r#"{"payment_hash":"0xabc","status":null,"created_at":null}"#;
+        let payment_null: PaymentInfo = serde_json::from_str(json_null).unwrap();
+        assert_eq!(payment_null.created_at, None);
+    }
+
+    #[test]
+    fn test_list_payments_params_hex_serialization() {
+        let params = ListPaymentsParams {
+            status: Some(PaymentStatus::Success),
+            limit: Some(16),
+            after: Some("cursor_123".to_string()),
+        };
+        let val = serde_json::to_value(&params).unwrap();
+        assert_eq!(val["limit"], "0x10");
+        assert_eq!(val["status"], "Success");
+        assert_eq!(val["after"], "cursor_123");
+    }
+
+    #[test]
+    fn test_channel_state_adjacently_tagged() {
+        let json = r#"{"state_name":"ChannelReady"}"#;
+        let state: ChannelState = serde_json::from_str(json).unwrap();
+        assert_eq!(state, ChannelState::ChannelReady);
+
+        let json_stale = r#"{"state_name":"Stale"}"#;
+        let state_stale: ChannelState = serde_json::from_str(json_stale).unwrap();
+        assert_eq!(state_stale, ChannelState::Stale);
+    }
 }

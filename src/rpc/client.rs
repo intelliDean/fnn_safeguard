@@ -1,11 +1,11 @@
 use super::types::*;
-use anyhow::{anyhow, bail, Context, Result};
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
+use anyhow::{Context, Result, anyhow, bail};
 use reqwest::Client;
-use serde::de::DeserializeOwned;
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use serde::Serialize;
-use std::sync::atomic::{AtomicU64, Ordering};
+use serde::de::DeserializeOwned;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
@@ -33,7 +33,12 @@ impl FnnRpcClient {
             .build()
             .context("Failed to construct HTTP client")?;
 
-        Ok(Self { url: url.into(), auth_token, client, request_id: Arc::new(AtomicU64::new(1)) })
+        Ok(Self {
+            url: url.into(),
+            auth_token,
+            client,
+            request_id: Arc::new(AtomicU64::new(1)),
+        })
     }
 
     pub fn url(&self) -> &str {
@@ -61,17 +66,24 @@ impl FnnRpcClient {
             .with_context(|| format!("Failed to connect to FNN RPC at {}", self.url))?;
 
         if !resp.status().is_success() {
-            bail!("FNN RPC endpoint returned HTTP status {}", resp.status().as_u16());
+            bail!(
+                "FNN RPC endpoint returned HTTP status {}",
+                resp.status().as_u16()
+            );
         }
 
-        let rpc_res: JsonRpcResponse<R> =
-            resp.json().await.context("Failed to parse JSON-RPC response from FNN")?;
+        let rpc_res: JsonRpcResponse<R> = resp
+            .json()
+            .await
+            .context("Failed to parse JSON-RPC response from FNN")?;
 
         if let Some(err) = rpc_res.error {
             bail!("FNN RPC method '{}' error: {}", method, err);
         }
 
-        rpc_res.result.ok_or_else(|| anyhow!("RPC response for '{}' contained null result", method))
+        rpc_res
+            .result
+            .ok_or_else(|| anyhow!("RPC response for '{}' contained null result", method))
     }
 
     pub async fn node_info(&self) -> Result<NodeInfoResult> {
@@ -106,15 +118,17 @@ impl FnnRpcClient {
         let batch_size = 50u64;
 
         loop {
-            let params =
-                ListPaymentsParams { status, limit: Some(batch_size), after: cursor.clone() };
+            let params = ListPaymentsParams {
+                status,
+                limit: Some(batch_size),
+                after: cursor.clone(),
+            };
 
             let res = self.list_payments(Some(params)).await?;
             if res.payments.is_empty() {
                 break;
             }
 
-            let count = res.payments.len();
             all_payments.extend(res.payments);
 
             if let Some(max) = max_limit
@@ -134,10 +148,6 @@ impl FnnRpcClient {
                 }
                 _ => break,
             }
-
-            if (count as u64) < batch_size {
-                break;
-            }
         }
 
         Ok(all_payments)
@@ -149,17 +159,25 @@ impl FnnRpcClient {
         let id = self.request_id.fetch_add(1, Ordering::Relaxed);
         let req = JsonRpcRequest::new(id, "backup", ());
 
-        let resp =
-            self.client.post(&self.url).json(&req).send().await.with_context(|| {
-                format!("Failed to send backup request to FNN RPC at {}", self.url)
-            })?;
+        let resp = self
+            .client
+            .post(&self.url)
+            .json(&req)
+            .send()
+            .await
+            .with_context(|| format!("Failed to send backup request to FNN RPC at {}", self.url))?;
 
         if !resp.status().is_success() {
-            bail!("FNN RPC endpoint returned HTTP status {}", resp.status().as_u16());
+            bail!(
+                "FNN RPC endpoint returned HTTP status {}",
+                resp.status().as_u16()
+            );
         }
 
-        let json_val: serde_json::Value =
-            resp.json().await.context("Failed to parse JSON-RPC response from FNN backup call")?;
+        let json_val: serde_json::Value = resp
+            .json()
+            .await
+            .context("Failed to parse JSON-RPC response from FNN backup call")?;
 
         if let Some(err) = json_val.get("error")
             && !err.is_null()

@@ -39,7 +39,11 @@ fn test_backup_validation_and_manifest_generation() {
     // 1. Inspect and validate
     let validation =
         BackupValidator::inspect_and_validate(&backup_path, Some(&expected_pubkey)).unwrap();
-    assert!(validation.is_valid, "Validation failed: {:?}", validation.errors);
+    assert!(
+        validation.is_valid,
+        "Validation failed: {:?}",
+        validation.errors
+    );
     assert_eq!(validation.database_type, "rocksdb");
     assert_eq!(validation.derived_pubkey, expected_pubkey);
     assert_eq!(validation.file_count, 5); // sk, key, CURRENT, MANIFEST-000001, 000002.sst

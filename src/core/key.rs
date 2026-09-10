@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use std::fmt::{Debug, Result as FmtResult};
 use std::fs;
@@ -36,7 +36,10 @@ impl IdentityKey {
     /// Derives the compressed 33-byte secp256k1 public key from 32 raw secret key bytes.
     pub fn from_bytes(raw: &[u8]) -> Result<Self> {
         if raw.len() != 32 {
-            bail!("Invalid secret key length: expected 32 bytes, got {}", raw.len());
+            bail!(
+                "Invalid secret key length: expected 32 bytes, got {}",
+                raw.len()
+            );
         }
 
         let secp = Secp256k1::new();
@@ -45,7 +48,10 @@ impl IdentityKey {
         let pubkey_bytes = pk.serialize();
         let pubkey_hex = hex::encode(pubkey_bytes);
 
-        Ok(Self { pubkey_hex, raw_len: raw.len() })
+        Ok(Self {
+            pubkey_hex,
+            raw_len: raw.len(),
+        })
     }
 
     pub fn public_key_hex(&self) -> &str {

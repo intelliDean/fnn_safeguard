@@ -1,0 +1,12 @@
+{
+  "channel_count_diff": null,
+  "comparison_status": "SOURCE_RECORDED_RESTORE_UNVERIFIED",
+  "identical": false,
+  "note": "Restored database validated successfully via fnn --check-validate. Channel and payment inventories were recorded at backup time from live node RPC, but restored database inventory is unverified offline without starting a live node.",
+  "payment_count_diff": null,
+  "public_key_match": true,
+  "restored_channel_count": "NOT_TESTED (requires running daemon)",
+  "restored_payment_count": "NOT_TESTED (requires running daemon)",
+  "source_channel_count": 1,
+  "source_payment_count": 1
+}
