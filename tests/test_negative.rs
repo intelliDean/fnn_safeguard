@@ -110,6 +110,10 @@ fn test_zero_secrets_in_manifest() {
         config_checksum: "sha256:config",
         channel_count: None,
         payment_count: None,
+        channel_id_digest: None,
+        payment_hash_digest: None,
+        channel_state_distribution: None,
+        payment_status_distribution: None,
         created_at: None,
         expected_pubkey: None,
     };

@@ -19,6 +19,10 @@ pub struct BuildManifestParams<'a> {
     pub config_checksum: &'a str,
     pub channel_count: Option<u32>,
     pub payment_count: Option<u32>,
+    pub channel_id_digest: Option<String>,
+    pub payment_hash_digest: Option<String>,
+    pub channel_state_distribution: Option<std::collections::HashMap<String, u32>>,
+    pub payment_status_distribution: Option<std::collections::HashMap<String, u32>>,
     pub expected_pubkey: Option<&'a str>,
     pub created_at: Option<DateTime<Utc>>,
 }
@@ -197,6 +201,10 @@ impl BackupValidator {
             config_checksum: params.config_checksum.to_string(),
             channel_count: params.channel_count,
             payment_count: params.payment_count,
+            channel_id_digest: params.channel_id_digest.clone(),
+            payment_hash_digest: params.payment_hash_digest.clone(),
+            channel_state_distribution: params.channel_state_distribution.clone(),
+            payment_status_distribution: params.payment_status_distribution.clone(),
             created_at: params.created_at,
         });
 

@@ -30,6 +30,8 @@ pub struct DockerExecutionResult {
     pub restored_pubkey: String,
     pub identity_match: bool,
     pub docker_image: String,
+    pub docker_image_digest: String,
+    pub fnn_version_in_container: String,
     pub permission_workaround_applied: bool,
 }
 
@@ -87,7 +89,75 @@ impl DockerIsolationSandbox {
 
         let user_arg = Self::host_uid_gid();
 
-        // 1. Run network isolation probe inside container with --network none
+        // 0. Resolve pinned image digest via `docker inspect`
+        let digest_output = Command::new("docker")
+            .args([
+                "inspect",
+                "--format",
+                "{{index .RepoDigests 0}}",
+                &self.image,
+            ])
+            .output()
+            .context("Failed to run docker inspect to resolve image digest")?;
+        let docker_image_digest = String::from_utf8_lossy(&digest_output.stdout)
+            .trim()
+            .to_string();
+        if docker_image_digest.is_empty() || !docker_image_digest.contains('@') {
+            // Pull first, then re-inspect
+            let _ = Command::new("docker").args(["pull", &self.image]).output();
+            let digest_output2 = Command::new("docker")
+                .args([
+                    "inspect",
+                    "--format",
+                    "{{index .RepoDigests 0}}",
+                    &self.image,
+                ])
+                .output()
+                .context("Failed to resolve image digest after pull")?;
+            let d2 = String::from_utf8_lossy(&digest_output2.stdout)
+                .trim()
+                .to_string();
+            if d2.is_empty() || !d2.contains('@') {
+                bail!(
+                    "Cannot pin Docker image: digest unresolvable for '{}'. Use a versioned tag or @sha256: digest.",
+                    self.image
+                );
+            }
+        }
+        // Re-read after potential pull
+        let docker_image_digest = Command::new("docker")
+            .args([
+                "inspect",
+                "--format",
+                "{{index .RepoDigests 0}}",
+                &self.image,
+            ])
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_default();
+
+        // 0b. Record `fnn --version` inside the container
+        let version_output = Command::new("docker")
+            .arg("run")
+            .arg("--rm")
+            .arg("--network")
+            .arg("none")
+            .arg("--entrypoint")
+            .arg("fnn")
+            .arg(&self.image)
+            .arg("--version")
+            .output()
+            .context("Failed to run fnn --version inside Docker container")?;
+        let fnn_version_in_container = {
+            let stdout = String::from_utf8_lossy(&version_output.stdout)
+                .trim()
+                .to_string();
+            let stderr = String::from_utf8_lossy(&version_output.stderr)
+                .trim()
+                .to_string();
+            if !stdout.is_empty() { stdout } else { stderr }
+        };
+
         let probe_target = "8.8.8.8:80";
         let probe_cmd = "bash -c 'exec 3<>/dev/tcp/8.8.8.8/80'";
         let probe_output = Command::new("docker")
@@ -251,6 +321,8 @@ ckb:
             restored_pubkey,
             identity_match,
             docker_image: self.image.clone(),
+            docker_image_digest,
+            fnn_version_in_container,
             permission_workaround_applied: true,
         })
     }

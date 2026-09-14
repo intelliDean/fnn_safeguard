@@ -33,6 +33,18 @@ pub struct RecoveryManifest {
     pub channel_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payment_count: Option<u32>,
+    /// SHA-256 of sorted channel_id list (hex-encoded, no prefix); null if no channels
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_id_digest: Option<String>,
+    /// SHA-256 of sorted payment_hash list (hex-encoded, no prefix); null if no payments
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payment_hash_digest: Option<String>,
+    /// Map of state_name -> count at backup time
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_state_distribution: Option<std::collections::HashMap<String, u32>>,
+    /// Map of payment status -> count at backup time
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payment_status_distribution: Option<std::collections::HashMap<String, u32>>,
     pub files: BTreeMap<String, FileMetadata>,
 }
 
@@ -46,6 +58,10 @@ pub struct ManifestParams {
     pub config_checksum: String,
     pub channel_count: Option<u32>,
     pub payment_count: Option<u32>,
+    pub channel_id_digest: Option<String>,
+    pub payment_hash_digest: Option<String>,
+    pub channel_state_distribution: Option<std::collections::HashMap<String, u32>>,
+    pub payment_status_distribution: Option<std::collections::HashMap<String, u32>>,
     #[serde(default)]
     pub created_at: Option<DateTime<Utc>>,
 }
@@ -80,6 +96,10 @@ impl RecoveryManifest {
             bundle_checksum: String::new(),
             channel_count: params.channel_count,
             payment_count: params.payment_count,
+            channel_id_digest: params.channel_id_digest,
+            payment_hash_digest: params.payment_hash_digest,
+            channel_state_distribution: params.channel_state_distribution,
+            payment_status_distribution: params.payment_status_distribution,
             files: BTreeMap::new(),
         }
     }
@@ -233,6 +253,10 @@ mod tests {
             config_checksum: "sha256:config".to_string(),
             channel_count: Some(5),
             payment_count: Some(10),
+            channel_id_digest: None,
+            payment_hash_digest: None,
+            channel_state_distribution: None,
+            payment_status_distribution: None,
             created_at: None,
         });
 
@@ -265,6 +289,10 @@ mod tests {
             config_checksum: "sha256:cfg".to_string(),
             channel_count: Some(1),
             payment_count: Some(0),
+            channel_id_digest: None,
+            payment_hash_digest: None,
+            channel_state_distribution: None,
+            payment_status_distribution: None,
             created_at: None,
         });
 

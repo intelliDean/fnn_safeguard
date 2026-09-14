@@ -154,7 +154,7 @@ pub struct DrillArgs {
     #[arg(long)]
     pub docker: bool,
 
-    /// Docker image to use for container drill
+    /// Docker image to use for container drill (default: ghcr.io/nervosnetwork/fiber:v0.9.0)
     #[arg(long)]
     pub docker_image: Option<String>,
 

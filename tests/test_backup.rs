@@ -56,6 +56,10 @@ fn test_backup_validation_and_manifest_generation() {
         config_checksum: "sha256:dummy_config_hash",
         channel_count: Some(12),
         payment_count: Some(45),
+        channel_id_digest: None,
+        payment_hash_digest: None,
+        channel_state_distribution: None,
+        payment_status_distribution: None,
         created_at: None,
         expected_pubkey: Some(&expected_pubkey),
     };
