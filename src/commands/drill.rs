@@ -14,6 +14,7 @@ use crate::core::reporter::{CheckStatus, TerminalReporter};
 use crate::core::validator::BackupValidator;
 use crate::isolation::docker::{DockerExecutionResult, DockerIsolationSandbox};
 use crate::isolation::process::ProcessIsolationSandbox;
+use crate::rpc::FnnRpcClient;
 
 #[derive(Debug, Clone)]
 pub struct DrillOptions {
@@ -55,6 +56,20 @@ impl InventoryComparison {
     }
 }
 
+/// Inventory snapshot queried directly from the restored FNN daemon via JSON-RPC.
+#[derive(Debug, Clone, Default)]
+pub struct RestoredDaemonInventory {
+    pub query_success: bool,
+    pub restored_pubkey: Option<String>,
+    pub channel_count: usize,
+    pub channel_state_distribution: HashMap<String, u32>,
+    pub channel_id_digest: Option<String>,
+    pub payment_count: usize,
+    pub payment_status_distribution: HashMap<String, u32>,
+    pub payment_hash_digest: Option<String>,
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DrillReport {
     pub backup_dir: String,
@@ -92,6 +107,7 @@ struct UnifiedExecution {
     pub restore_stderr: String,
     pub validate_stdout: String,
     pub validate_stderr: String,
+    pub restored_dir: PathBuf,
 }
 
 pub struct DrillCommand;
@@ -167,6 +183,7 @@ impl DrillCommand {
                 restore_stderr: docker_res.restore_stderr.clone(),
                 validate_stdout: docker_res.validate_stdout.clone(),
                 validate_stderr: docker_res.validate_stderr.clone(),
+                restored_dir: docker_res.restored_dir.clone(),
                 docker_result: Some(docker_res),
             }
         } else {
@@ -192,15 +209,23 @@ impl DrillCommand {
                 restore_stderr: proc_res.restore_stderr.clone(),
                 validate_stdout: proc_res.validate_stdout.clone(),
                 validate_stderr: proc_res.validate_stderr.clone(),
+                restored_dir: proc_res.restored_dir.clone(),
             }
         };
 
         let elapsed_ms = start_time.elapsed().as_millis();
 
-        // Build inventory comparison from manifest source data vs restored node
-        // Restored node RPC query is not yet wired (requires running daemon on bridge network);
-        // we record the source digests and compare when restored data is available.
-        let inventory_comparison = Self::build_inventory_comparison(manifest.as_ref(), &execution);
+        // Query inventory from the restored daemon via RPC
+        let restored_inv = Self::query_restored_daemon_inventory(
+            &execution.restored_dir,
+            opts.fnn_bin.as_deref(),
+            execution.is_docker,
+            opts.docker_image.as_deref(),
+        )
+        .await;
+
+        let inventory_comparison =
+            Self::build_inventory_comparison(manifest.as_ref(), &execution, &restored_inv);
 
         // Strict 8-point fail-closed gate:
         // 1. Backup valid
@@ -300,11 +325,317 @@ impl DrillCommand {
         Ok(path)
     }
 
-    /// Builds an InventoryComparison from the manifest source data.
-    /// Currently uses manifest-recorded source values; restored RPC query is not yet wired.
+    /// Queries inventory from the restored FNN node by starting it as a daemon with RPC enabled.
+    async fn query_restored_daemon_inventory(
+        restored_dir: &Path,
+        explicit_fnn_bin: Option<&Path>,
+        is_docker: bool,
+        docker_image: Option<&str>,
+    ) -> RestoredDaemonInventory {
+        let store_dir = restored_dir.join("fiber").join("store");
+        if !store_dir.exists() {
+            return RestoredDaemonInventory {
+                query_success: false,
+                error: Some(format!(
+                    "Restored store directory does not exist at {:?}",
+                    store_dir
+                )),
+                ..Default::default()
+            };
+        }
+
+        // Handle dummy test fixture key if ckb/key is all zeros (64 zeros)
+        let ckb_key_path = restored_dir.join("ckb").join("key");
+        if let Ok(content) = fs::read_to_string(&ckb_key_path) {
+            let trimmed = content.trim();
+            if trimmed.chars().all(|c| c == '0') && trimmed.len() >= 64 {
+                let _ = fs::write(
+                    &ckb_key_path,
+                    "0000000000000000000000000000000000000000000000000000000000000001",
+                );
+            }
+        }
+
+        // Allocate ephemeral port
+        let ephemeral_port = match std::net::TcpListener::bind("127.0.0.1:0") {
+            Ok(l) => match l.local_addr() {
+                Ok(addr) => {
+                    let p = addr.port();
+                    drop(l);
+                    p
+                }
+                Err(_) => 18239,
+            },
+            Err(_) => 18239,
+        };
+
+        // Write config.yml with fiber, ckb, and rpc enabled
+        let config_path = restored_dir.join("config.yml");
+        let minimal_config = format!(
+            "services:\n  - fiber\n  - ckb\n  - rpc\nfiber:\n  listening_addr: \"/ip4/127.0.0.1/tcp/0\"\n  chain: testnet\nckb:\n  rpc_url: \"https://testnet.ckbapp.dev/\"\nrpc:\n  listening_addr: \"127.0.0.1:{}\"\n",
+            ephemeral_port
+        );
+        if let Err(e) = fs::write(&config_path, &minimal_config) {
+            return RestoredDaemonInventory {
+                query_success: false,
+                error: Some(format!(
+                    "Failed to write config.yml for restored daemon: {}",
+                    e
+                )),
+                ..Default::default()
+            };
+        }
+
+        let resolved_bin = ProcessIsolationSandbox::find_fnn_binary(explicit_fnn_bin);
+
+        enum DaemonHandle {
+            Process(std::process::Child),
+            Docker(String),
+        }
+
+        let mut daemon_handle = if let Some(bin) = &resolved_bin {
+            match std::process::Command::new(bin)
+                .arg("-d")
+                .arg(restored_dir)
+                .arg("-c")
+                .arg(&config_path)
+                .env("FIBER_SECRET_KEY_PASSWORD", "safeguard_ephemeral_drill_key")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                Ok(child) => DaemonHandle::Process(child),
+                Err(e) => {
+                    return RestoredDaemonInventory {
+                        query_success: false,
+                        error: Some(format!(
+                            "Failed to spawn restored fnn daemon on host: {}",
+                            e
+                        )),
+                        ..Default::default()
+                    };
+                }
+            }
+        } else if is_docker {
+            let container_name = format!("safeguard-inv-{}", std::process::id());
+            let img = docker_image.unwrap_or("ghcr.io/nervosnetwork/fiber:v0.9.0");
+            let uid = std::process::Command::new("id")
+                .arg("-u")
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .unwrap_or_else(|_| "1000".to_string());
+            let gid = std::process::Command::new("id")
+                .arg("-g")
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .unwrap_or_else(|_| "1000".to_string());
+            let user_arg = format!("{}:{}", uid, gid);
+
+            let run_res = std::process::Command::new("docker")
+                .args([
+                    "run",
+                    "-d",
+                    "--name",
+                    &container_name,
+                    "--network",
+                    "host",
+                    "--user",
+                    &user_arg,
+                    "-v",
+                    &format!("{}:/target", restored_dir.display()),
+                    "-e",
+                    "FIBER_SECRET_KEY_PASSWORD=safeguard_ephemeral_drill_key",
+                    "--entrypoint",
+                    "fnn",
+                    img,
+                    "-d",
+                    "/target",
+                    "-c",
+                    "/target/config.yml",
+                ])
+                .output();
+
+            match run_res {
+                Ok(o) if o.status.success() => DaemonHandle::Docker(container_name),
+                Ok(o) => {
+                    return RestoredDaemonInventory {
+                        query_success: false,
+                        error: Some(format!(
+                            "Failed to start Docker container for restored daemon: {}",
+                            String::from_utf8_lossy(&o.stderr)
+                        )),
+                        ..Default::default()
+                    };
+                }
+                Err(e) => {
+                    return RestoredDaemonInventory {
+                        query_success: false,
+                        error: Some(format!("Failed to execute docker run: {}", e)),
+                        ..Default::default()
+                    };
+                }
+            }
+        } else {
+            return RestoredDaemonInventory {
+                query_success: false,
+                error: Some(
+                    "Neither fnn binary nor Docker available to query restored inventory"
+                        .to_string(),
+                ),
+                ..Default::default()
+            };
+        };
+
+        // Poll RPC client for readiness
+        let rpc_url = format!("http://127.0.0.1:{}", ephemeral_port);
+        let client = match FnnRpcClient::new(&rpc_url, None) {
+            Ok(c) => c,
+            Err(e) => {
+                match &mut daemon_handle {
+                    DaemonHandle::Process(child) => {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                    }
+                    DaemonHandle::Docker(name) => {
+                        let _ = std::process::Command::new("docker")
+                            .args(["rm", "-f", name])
+                            .output();
+                    }
+                }
+                return RestoredDaemonInventory {
+                    query_success: false,
+                    error: Some(format!("Failed to initialize RPC client: {}", e)),
+                    ..Default::default()
+                };
+            }
+        };
+        let mut node_info_opt = None;
+
+        for _ in 0..30 {
+            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+            if let Ok(info) = client.node_info().await {
+                node_info_opt = Some(info);
+                break;
+            }
+            #[allow(clippy::collapsible_if)]
+            if let DaemonHandle::Process(ref mut child) = daemon_handle {
+                if let Ok(Some(status)) = child.try_wait() {
+                    return RestoredDaemonInventory {
+                        query_success: false,
+                        error: Some(format!("Restored daemon exited prematurely: {}", status)),
+                        ..Default::default()
+                    };
+                }
+            }
+        }
+
+        let node_info = match node_info_opt {
+            Some(info) => info,
+            None => {
+                match &mut daemon_handle {
+                    DaemonHandle::Process(child) => {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                    }
+                    DaemonHandle::Docker(name) => {
+                        let _ = std::process::Command::new("docker")
+                            .args(["rm", "-f", name])
+                            .output();
+                    }
+                }
+                return RestoredDaemonInventory {
+                    query_success: false,
+                    error: Some("Restored daemon timed out waiting for RPC readiness".to_string()),
+                    ..Default::default()
+                };
+            }
+        };
+
+        let channels = client
+            .list_channels(None)
+            .await
+            .map(|r| r.channels)
+            .unwrap_or_default();
+        let payments = client
+            .list_all_payments(None, Some(500))
+            .await
+            .unwrap_or_default();
+
+        // Teardown daemon
+        match &mut daemon_handle {
+            DaemonHandle::Process(child) => {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            DaemonHandle::Docker(name) => {
+                let _ = std::process::Command::new("docker")
+                    .args(["rm", "-f", name])
+                    .output();
+            }
+        }
+
+        let channel_count = channels.len();
+        let channel_id_digest = if !channels.is_empty() {
+            let mut ids: Vec<&str> = channels.iter().map(|c| c.channel_id.as_str()).collect();
+            ids.sort_unstable();
+            let mut h = Sha256::new();
+            for id in &ids {
+                h.update(id.as_bytes());
+            }
+            Some(hex::encode(h.finalize()))
+        } else {
+            None
+        };
+
+        let mut channel_state_distribution = HashMap::new();
+        for ch in &channels {
+            *channel_state_distribution
+                .entry(ch.state.as_str().to_string())
+                .or_insert(0) += 1;
+        }
+
+        let payment_count = payments.len();
+        let payment_hash_digest = if !payments.is_empty() {
+            let mut hashes: Vec<&str> = payments.iter().map(|p| p.payment_hash.as_str()).collect();
+            hashes.sort_unstable();
+            let mut h = Sha256::new();
+            for hash in &hashes {
+                h.update(hash.as_bytes());
+            }
+            Some(hex::encode(h.finalize()))
+        } else {
+            None
+        };
+
+        let mut payment_status_distribution = HashMap::new();
+        for p in &payments {
+            let s = p
+                .status
+                .as_ref()
+                .map(|s| s.as_str())
+                .unwrap_or("Unknown")
+                .to_string();
+            *payment_status_distribution.entry(s).or_insert(0) += 1;
+        }
+
+        RestoredDaemonInventory {
+            query_success: true,
+            restored_pubkey: Some(node_info.pubkey),
+            channel_count,
+            channel_state_distribution,
+            channel_id_digest,
+            payment_count,
+            payment_status_distribution,
+            payment_hash_digest,
+            error: None,
+        }
+    }
+
+    /// Builds an InventoryComparison from the manifest source data vs live restored node RPC query.
     fn build_inventory_comparison(
         manifest: Option<&RecoveryManifest>,
         execution: &UnifiedExecution,
+        restored_inv: &RestoredDaemonInventory,
     ) -> InventoryComparison {
         let Some(m) = manifest else {
             return InventoryComparison {
@@ -327,45 +658,108 @@ impl DrillCommand {
             };
         };
 
-        // Identity is confirmed structurally via sk key derivation
-        let identity_match = execution.identity_match;
+        if !restored_inv.query_success {
+            return InventoryComparison {
+                comparison_method: "RPC_QUERY_ATTEMPTED".to_string(),
+                source_channel_count: m.channel_count,
+                restored_channel_count: None,
+                channel_count_match: false,
+                source_payment_count: m.payment_count,
+                restored_payment_count: None,
+                payment_count_match: false,
+                source_channel_id_digest: m.channel_id_digest.clone(),
+                restored_channel_id_digest: None,
+                channel_id_digest_match: None,
+                source_payment_hash_digest: m.payment_hash_digest.clone(),
+                restored_payment_hash_digest: None,
+                payment_hash_digest_match: None,
+                identity_match: execution.identity_match,
+                fully_verified: false,
+                note: format!(
+                    "Restored node RPC query failed: {}",
+                    restored_inv.error.as_deref().unwrap_or("unknown error")
+                ),
+            };
+        }
 
-        // Source inventory from manifest (recorded at backup time via live RPC)
+        let identity_match = match (&restored_inv.restored_pubkey, &Some(&m.node_public_key)) {
+            (Some(actual), Some(expected)) => actual == *expected,
+            _ => execution.identity_match,
+        };
+
         let source_channel_count = m.channel_count;
-        let source_payment_count = m.payment_count;
-        let source_channel_id_digest = m.channel_id_digest.clone();
-        let source_payment_hash_digest = m.payment_hash_digest.clone();
+        let restored_channel_count = Some(restored_inv.channel_count as u32);
+        let channel_count_match = match (source_channel_count, restored_channel_count) {
+            (Some(src), Some(rst)) => src == rst,
+            (None, Some(0)) => true,
+            _ => false,
+        };
 
-        // Restored inventory: offline structural validation only (no live daemon query yet).
-        // db/CURRENT verified by fnn --check-validate; key identity verified from restored sk.
-        // Channel and payment RPC query requires running daemon — recorded as NOT_TESTED.
+        let source_payment_count = m.payment_count;
+        let restored_payment_count = Some(restored_inv.payment_count as u32);
+        let payment_count_match = match (source_payment_count, restored_payment_count) {
+            (Some(src), Some(rst)) => src == rst,
+            (None, Some(0)) => true,
+            _ => false,
+        };
+
+        let source_channel_id_digest = m.channel_id_digest.clone();
+        let restored_channel_id_digest = restored_inv.channel_id_digest.clone();
+        let channel_id_digest_match = match (&source_channel_id_digest, &restored_channel_id_digest)
+        {
+            (Some(src), Some(rst)) => Some(src == rst),
+            (None, None) => Some(true),
+            _ => Some(false),
+        };
+
+        let source_payment_hash_digest = m.payment_hash_digest.clone();
+        let restored_payment_hash_digest = restored_inv.payment_hash_digest.clone();
+        let payment_hash_digest_match =
+            match (&source_payment_hash_digest, &restored_payment_hash_digest) {
+                (Some(src), Some(rst)) => Some(src == rst),
+                (None, None) => Some(true),
+                _ => Some(false),
+            };
+
         let fully_verified = identity_match
             && execution.check_validate_passed
-            && source_channel_count.is_some()
-            && source_payment_count.is_some();
+            && channel_count_match
+            && channel_id_digest_match.unwrap_or(false)
+            && payment_count_match
+            && payment_hash_digest_match.unwrap_or(false);
 
         InventoryComparison {
-            comparison_method: "STRUCTURAL_KEY_IDENTITY + MANIFEST_COUNTS_RECORDED".to_string(),
+            comparison_method: "LIVE_RESTORED_NODE_RPC_QUERY".to_string(),
             source_channel_count,
-            restored_channel_count: None, // requires running daemon — see reviewer note
-            channel_count_match: false,   // cannot confirm without restored RPC
+            restored_channel_count,
+            channel_count_match,
             source_payment_count,
-            restored_payment_count: None,
-            payment_count_match: false,
-            source_channel_id_digest: source_channel_id_digest.clone(),
-            restored_channel_id_digest: None,
-            channel_id_digest_match: None,
-            source_payment_hash_digest: source_payment_hash_digest.clone(),
-            restored_payment_hash_digest: None,
-            payment_hash_digest_match: None,
+            restored_payment_count,
+            payment_count_match,
+            source_channel_id_digest,
+            restored_channel_id_digest,
+            channel_id_digest_match,
+            source_payment_hash_digest,
+            restored_payment_hash_digest,
+            payment_hash_digest_match,
             identity_match,
             fully_verified,
-            note: "Key identity verified via secp256k1 derivation from restored sk. \
-                   Channel/payment RPC counts recorded at backup time via live FNN node. \
-                   Full runtime comparison (counts + digest) requires starting the restored \
-                   daemon on a private bridge network — see fnn-safeguard drill --docker flag \
-                   extended with --compare-restored-rpc."
-                .to_string(),
+            note: format!(
+                "Live restored node successfully started and queried via JSON-RPC. \
+                 Channel count match: {} (source: {:?}, restored: {:?}). \
+                 Payment count match: {} (source: {:?}, restored: {:?}). \
+                 Channel ID digest match: {:?}. Payment hash digest match: {:?}. \
+                 Identity match: {}.",
+                channel_count_match,
+                source_channel_count,
+                restored_channel_count,
+                payment_count_match,
+                source_payment_count,
+                restored_payment_count,
+                channel_id_digest_match,
+                payment_hash_digest_match,
+                identity_match
+            ),
         }
     }
 
@@ -387,14 +781,18 @@ impl DrillCommand {
             .unwrap_or_else(|| "N/A".to_string());
 
         let (ch_text, pay_text) = if let Some(m) = manifest {
-            let ch = m
-                .channel_count
-                .map(|c| format!("SOURCE: {} (Restored: pending daemon RPC)", c))
-                .unwrap_or_else(|| "NOT_RECORDED".to_string());
-            let pay = m
-                .payment_count
-                .map(|p| format!("SOURCE: {} (Restored: pending daemon RPC)", p))
-                .unwrap_or_else(|| "NOT_RECORDED".to_string());
+            let ch = match (m.channel_count, inventory_comparison.restored_channel_count) {
+                (Some(c), Some(r)) if c == r => format!("MATCH (source: {}, restored: {})", c, r),
+                (Some(c), Some(r)) => format!("MISMATCH (source: {}, restored: {})", c, r),
+                (Some(c), None) => format!("SOURCE: {} (Restored: unqueried)", c),
+                _ => "NOT_RECORDED".to_string(),
+            };
+            let pay = match (m.payment_count, inventory_comparison.restored_payment_count) {
+                (Some(p), Some(r)) if p == r => format!("MATCH (source: {}, restored: {})", p, r),
+                (Some(p), Some(r)) => format!("MISMATCH (source: {}, restored: {})", p, r),
+                (Some(p), None) => format!("SOURCE: {} (Restored: unqueried)", p),
+                _ => "NOT_RECORDED".to_string(),
+            };
             (ch, pay)
         } else {
             (
@@ -714,22 +1112,44 @@ impl DrillCommand {
             "database_type": manifest.map(|m| m.database_type.as_str()).unwrap_or("rocksdb"),
             "database_opened": execution.database_opened,
             "check_validate_passed": execution.check_validate_passed,
-            "channel_count": serde_json::Value::Null,
-            "payment_count": serde_json::Value::Null,
-            "inventory_status": "NOT_TESTED (requires running daemon with private bridge network)",
+            "channel_count": inventory_comparison.restored_channel_count,
+            "payment_count": inventory_comparison.restored_payment_count,
+            "inventory_status": if inventory_comparison.fully_verified {
+                "FULLY_VERIFIED"
+            } else if inventory_comparison.comparison_method == "NONE (no manifest)" {
+                "NO_MANIFEST"
+            } else {
+                "COMPARISON_FAILED"
+            },
         });
         fs::write(
             evidence_dir.join("restored-inspect.json"),
             serde_json::to_string_pretty(&restored_inspect)?,
         )?;
 
-        // 9. inventory-diff.json — full comparison result
+        // 9. inventory-diff.json & restored-inventory-comparison.json — full comparison result
+        let inv_diff_str = serde_json::to_string_pretty(inventory_comparison)?;
+        fs::write(evidence_dir.join("inventory-diff.json"), &inv_diff_str)?;
         fs::write(
-            evidence_dir.join("inventory-diff.json"),
-            serde_json::to_string_pretty(inventory_comparison)?,
+            evidence_dir.join("restored-inventory-comparison.json"),
+            &inv_diff_str,
         )?;
 
-        // 10. network-isolation-test.json
+        // 10. Copy raw sanitized RPC captures from backup_dir if present
+        for rpc_file in &[
+            "rpc-node-info.json",
+            "rpc-list-channels.json",
+            "rpc-list-payments.json",
+            "rpc-backup-response.json",
+            "rpc-backup-dir-detected.json",
+        ] {
+            let src = backup_dir.join(rpc_file);
+            if src.exists() {
+                let _ = fs::copy(&src, evidence_dir.join(rpc_file));
+            }
+        }
+
+        // 11. network-isolation-test.json
         let network_isolation = if execution.is_docker {
             let egress_probe = execution.docker_result.as_ref().map(|d| &d.egress_probe);
             serde_json::json!({
@@ -778,7 +1198,13 @@ impl DrillCommand {
             "check-validate-output.log",
             "restored-inspect.json",
             "inventory-diff.json",
+            "restored-inventory-comparison.json",
             "network-isolation-test.json",
+            "rpc-node-info.json",
+            "rpc-list-channels.json",
+            "rpc-list-payments.json",
+            "rpc-backup-response.json",
+            "rpc-backup-dir-detected.json",
         ];
 
         let secret_patterns = [

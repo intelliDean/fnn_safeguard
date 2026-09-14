@@ -25,6 +25,7 @@ pub struct DrillExecutionReport {
     pub restore_stderr: String,
     pub validate_stdout: String,
     pub validate_stderr: String,
+    pub restored_dir: PathBuf,
     pub error: Option<String>,
 }
 
@@ -150,6 +151,7 @@ impl ProcessIsolationSandbox {
             restore_stderr: bin_exec.restore_stderr,
             validate_stdout: bin_exec.validate_stdout,
             validate_stderr: bin_exec.validate_stderr,
+            restored_dir: restore_dest,
             error: None,
         })
     }

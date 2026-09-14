@@ -33,6 +33,7 @@ pub struct DockerExecutionResult {
     pub docker_image_digest: String,
     pub fnn_version_in_container: String,
     pub permission_workaround_applied: bool,
+    pub restored_dir: std::path::PathBuf,
 }
 
 pub struct DockerIsolationSandbox {
@@ -324,6 +325,7 @@ ckb:
             docker_image_digest,
             fnn_version_in_container,
             permission_workaround_applied: true,
+            restored_dir: abs_target,
         })
     }
 }
