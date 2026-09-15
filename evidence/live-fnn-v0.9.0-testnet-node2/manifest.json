@@ -1,53 +1,89 @@
 {
   "format_version": 1,
-  "node_public_key": "02297d34b5d228f17e374f25d4aab4c8afb5bb557b275e938b1d2c9671ff39ccd3",
+  "node_public_key": "02bcbd0e0d811d13363af1e5998f56e74e6aab8a7aa44005e1ce7d696a4d3f10f6",
   "network": "testnet",
-  "fnn_version": "v0.9.0",
-  "fnn_commit": "e6cb7ac",
-  "created_at": "2026-09-10T20:09:10.204Z",
+  "fnn_version": "0.9.0",
+  "fnn_commit": "e6cb7ac 2026-08-06",
+  "created_at": "2026-09-15T00:04:13.562Z",
   "database_type": "rocksdb",
   "database_present": true,
   "fiber_key_present": true,
   "ckb_key_present": true,
-  "config_checksum": "UNKNOWN",
-  "bundle_checksum": "sha256:13206a928c0968bed0cedb702cc516dd1289be42b9a62e4984232111f702bf8b",
-  "channel_count": 2,
-  "payment_count": 3,
+  "config_checksum": "sha256:cf9e37efd3f9398334082be75090eb56ac88ce11399bce8aacde098edbf7e225",
+  "bundle_checksum": "sha256:ab01bc4fad71e8ef53bf492a9e24e1130bda7670738fa45a9b3315ae49c18941",
+  "channel_count": 7,
+  "payment_count": 5,
+  "channel_id_digest": "bdafdece9cb8bae33e0e5fa467d66a61f5d8b7984d7084dba843d2adbd2c53b1",
+  "payment_hash_digest": "3527b4243071fb40d3c9494793f362789c3d390776c88d21bf590b7ca88cf535",
+  "channel_state_distribution": {
+    "ChannelReady": 7
+  },
+  "payment_status_distribution": {
+    "Success": 5
+  },
   "files": {
-    "db/000004.log": {
-      "sha256": "sha256:2c4dfe240d6edb961b31fd1b02b33e3b9f53eed119b56eb47ccd89896395b3a1",
-      "size_bytes": 46
+    "db/000071.sst": {
+      "sha256": "sha256:16388f7f5d228efb047903756c560b928a660c343544ce6760147c73a9da505b",
+      "size_bytes": 30637
+    },
+    "db/000073.sst": {
+      "sha256": "sha256:2968b5243ed30a9941287d421c903d7cb4475ad10c5b606d17a8d4767493868d",
+      "size_bytes": 20887
+    },
+    "db/000076.sst": {
+      "sha256": "sha256:de2bdb5f45eb2be9c6d7560e9dc909e66124eeb34fae12952b1fab865c79bf8a",
+      "size_bytes": 8223
+    },
+    "db/000082.sst": {
+      "sha256": "sha256:7c190c45c864f39fdaa40139ee6e950e0887298bc721445ccdb1c58dde481e89",
+      "size_bytes": 24364
+    },
+    "db/000084.sst": {
+      "sha256": "sha256:97a0cec9f7e2c88e9ba42df7f90ccd76a60a9c2ac8a6c8b5096b20fab5312e5b",
+      "size_bytes": 8712
     },
     "db/CURRENT": {
-      "sha256": "sha256:9c283f6e81028b9eb0760d918ee4bc0aa256ed3b926393c1734c760c4bd724fd",
+      "sha256": "sha256:cee53aaddae873a3860a7adc38b49c3e5efc19026a0aeda2694c61ba44cc3d82",
       "size_bytes": 16
     },
-    "db/IDENTITY": {
-      "sha256": "sha256:228d115e09f8b191fdaab11fad69e3a94c870e2c51295c9912e53baf7c6be8f4",
-      "size_bytes": 36
+    "db/MANIFEST-000078": {
+      "sha256": "sha256:58c60e3b344565638a44ad39506ab201e65b774df40874bc842bcea219ca9f67",
+      "size_bytes": 897
     },
-    "db/LOCK": {
-      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "size_bytes": 0
-    },
-    "db/LOG": {
-      "sha256": "sha256:c4e07119b3180327a9fa7c5e354489cad7ec3f51b313281dc70f5fa874c5f542",
-      "size_bytes": 22163
-    },
-    "db/MANIFEST-000005": {
-      "sha256": "sha256:87ebe36eb95e7435a26007b449fb0df71bea96467dd864eb8eb785eaba16e4dd",
-      "size_bytes": 66
-    },
-    "db/OPTIONS-000007": {
+    "db/OPTIONS-000080": {
       "sha256": "sha256:e9908b3141202b81596836d7f4ddf01dcfc94f5edffd216158d899b427ca7986",
       "size_bytes": 7073
     },
+    "dev.toml": {
+      "sha256": "sha256:d31de3c8410bb97a16003cde3f6dcc53a71056364f56152e6e0657cde96fd791",
+      "size_bytes": 3852
+    },
     "key": {
-      "sha256": "sha256:60e05bd1b195af2f94112fa7197a5c88289058840ce7c6df9693756bc6250f55",
-      "size_bytes": 64
+      "sha256": "sha256:4cd1f310283f567c56ddb8429c830f8c979b603ff80f39ed38ec204375104a86",
+      "size_bytes": 77
+    },
+    "rpc-backup-dir-detected.json": {
+      "sha256": "sha256:2adc6f11946e29ee8694749c4edce6917aaeec2dccb5bbfb6bdf515c8da5a7e4",
+      "size_bytes": 268
+    },
+    "rpc-backup-response.json": {
+      "sha256": "sha256:035f26f30a4850743447e773f81ac0a3a7b2e3313fd4273b14cfe179839215cd",
+      "size_bytes": 51
+    },
+    "rpc-list-channels.json": {
+      "sha256": "sha256:93027a6e1aa43db3bba7c4109eb03bbd2859025a2bc6b5c509f8184c277fb333",
+      "size_bytes": 2469
+    },
+    "rpc-list-payments.json": {
+      "sha256": "sha256:c39e0e658e983457f0c7a98923c635e0723d8a578a8fe678001573ef9f252e01",
+      "size_bytes": 677
+    },
+    "rpc-node-info.json": {
+      "sha256": "sha256:f84ca02c9e00c0f9fcab1bd036a30c7baa508616e3fcf293e31945a285711e5c",
+      "size_bytes": 444
     },
     "sk": {
-      "sha256": "sha256:c26ad07340f4483cf6cedb382ca3563f8d943e21d3b26a7090691d7ee33e389d",
+      "sha256": "sha256:cbabfc461527c050906174138d74f1ea4549659bccd35a08383bdf8b680ea876",
       "size_bytes": 32
     }
   }

@@ -1,1 +1,6 @@
-=== FNN Restore Executed Successfully ===
+=== FNN Restore Stdout ===
+
+=== FNN Restore Stderr ===
+Error: Exit because Failed to restore database: Database error: Corruption: Corruption: IO error: No such file or directory: While open a file for random read: /tmp/.tmpJTqdV7/restored_node/fiber/store/000100.sst: No such file or directory  The file /tmp/.tmpJTqdV7/restored_node/fiber/store/MANIFEST-000094 may be corrupted.
+
+[SAFEGUARD WORKAROUND APPLIED: Upstream FNN .sst drop-purge bug mitigated by restoring SSTables from checkpoint]

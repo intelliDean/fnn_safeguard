@@ -1,11 +1,11 @@
 {
   "is_valid": true,
-  "verified_files": 9,
+  "verified_files": 14,
   "missing_files": [],
   "modified_files": [],
   "added_files": [],
   "bundle_checksum_match": true,
-  "expected_bundle_checksum": "sha256:13206a928c0968bed0cedb702cc516dd1289be42b9a62e4984232111f702bf8b",
-  "calculated_bundle_checksum": "sha256:13206a928c0968bed0cedb702cc516dd1289be42b9a62e4984232111f702bf8b",
+  "expected_bundle_checksum": "sha256:ca6cf3c15a51449c51989208dececc623f7edf20d41765e702150d3ec26f2c41",
+  "calculated_bundle_checksum": "sha256:ca6cf3c15a51449c51989208dececc623f7edf20d41765e702150d3ec26f2c41",
   "errors": []
 }

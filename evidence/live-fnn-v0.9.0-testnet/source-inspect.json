@@ -1,11 +1,19 @@
 {
-  "channel_count": 1,
-  "config_checksum": "UNKNOWN",
+  "channel_count": 7,
+  "channel_id_digest": "bdafdece9cb8bae33e0e5fa467d66a61f5d8b7984d7084dba843d2adbd2c53b1",
+  "channel_state_distribution": {
+    "ChannelReady": 7
+  },
+  "config_checksum": "sha256:5c6327f23cf0b8cf6d23779d78a4cf16fbfe793610c1e6ee50eb0bd622b713d3",
   "database_type": "rocksdb",
-  "fnn_commit": "e6cb7ac",
-  "fnn_version": "v0.9.0",
+  "fnn_commit": "e6cb7ac 2026-08-06",
+  "fnn_version": "0.9.0",
   "network": "testnet",
-  "node_public_key": "02297d34b5d228f17e374f25d4aab4c8afb5bb557b275e938b1d2c9671ff39ccd3",
-  "payment_count": 1,
-  "source_backup_dir": "/mnt/data/Projects/fnn_safeguard/scratch/testnet_node1/fiber/backups/1789070937789"
+  "node_public_key": "02a64b8993f33b2ebd37a4de1c9441f491291a4e779da8e519bcfb7c1f3f56c9c0",
+  "payment_count": 6,
+  "payment_hash_digest": "7fa5f65c994e6920d62f22319ff553afb0261915a3783b30ea3c151dd2f2cf1e",
+  "payment_status_distribution": {
+    "Success": 6
+  },
+  "source_backup_dir": "/home/dean/.gemini/antigravity-ide/brain/0ed7f8b2-f876-46e3-8a6b-955db604ae28/scratch/fiber/tests/nodes/1/fiber/backups/1789430640523"
 }

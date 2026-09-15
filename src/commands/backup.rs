@@ -110,6 +110,14 @@ impl BackupCommand {
             backup_dir_detected,
         )?;
 
+        // If dev.toml exists in node_dir, copy it into the backup directory so standalone restores have chain spec
+        if let Some(nd) = opts.node_dir.as_deref() {
+            let dev_toml = nd.join("dev.toml");
+            if dev_toml.exists() {
+                let _ = fs::copy(&dev_toml, resolved_dir.join("dev.toml"));
+            }
+        }
+
         let validation =
             BackupValidator::inspect_and_validate(&resolved_dir, opts.expected_pubkey.as_deref())?;
 

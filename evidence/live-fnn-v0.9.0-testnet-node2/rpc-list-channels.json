@@ -1,0 +1,74 @@
+{
+  "channels": [
+    {
+      "channel_id": "0x96e1d09fa4087979699e873d7983fcac6d013390d2e52996b5014be6381dbcbd",
+      "local_balance": "0xb0000",
+      "peer_id": null,
+      "pubkey": "02a64b8993f33b2ebd37a4de1c9441f491291a4e779da8e519bcfb7c1f3f56c9c0",
+      "remote_balance": "0x37785d33cd00",
+      "state": {
+        "state_name": "ChannelReady"
+      }
+    },
+    {
+      "channel_id": "0x5d44668a54ed09e8fddb0985362e2a097f4d83068f75cdad7b8bf0dcd74b8cf1",
+      "local_balance": "0xb0000",
+      "peer_id": null,
+      "pubkey": "02a64b8993f33b2ebd37a4de1c9441f491291a4e779da8e519bcfb7c1f3f56c9c0",
+      "remote_balance": "0x37785d33cd00",
+      "state": {
+        "state_name": "ChannelReady"
+      }
+    },
+    {
+      "channel_id": "0xf63ce5e1464dbe457cb0d89fdbefb5d8396a6eb44f0b534e0b5b8ad77ed9fd62",
+      "local_balance": "0xb0000",
+      "peer_id": null,
+      "pubkey": "02a64b8993f33b2ebd37a4de1c9441f491291a4e779da8e519bcfb7c1f3f56c9c0",
+      "remote_balance": "0x37785d33cd00",
+      "state": {
+        "state_name": "ChannelReady"
+      }
+    },
+    {
+      "channel_id": "0x353f8fe6043c8a7b0336d50fab94218df5e767d7a39d14c06123e598769a365a",
+      "local_balance": "0xb0000",
+      "peer_id": null,
+      "pubkey": "02a64b8993f33b2ebd37a4de1c9441f491291a4e779da8e519bcfb7c1f3f56c9c0",
+      "remote_balance": "0x37785d33cd00",
+      "state": {
+        "state_name": "ChannelReady"
+      }
+    },
+    {
+      "channel_id": "0x9d6799406ea3bb89599d7a38f2bc36b847400674a288836fb311cca2242407fd",
+      "local_balance": "0xb0000",
+      "peer_id": null,
+      "pubkey": "02a64b8993f33b2ebd37a4de1c9441f491291a4e779da8e519bcfb7c1f3f56c9c0",
+      "remote_balance": "0x37785d33cd00",
+      "state": {
+        "state_name": "ChannelReady"
+      }
+    },
+    {
+      "channel_id": "0x6a944b701e7edc26219e82f4fc4e704c9065b169f821903c12d6b0177168fc2e",
+      "local_balance": "0x100000",
+      "peer_id": null,
+      "pubkey": "02a64b8993f33b2ebd37a4de1c9441f491291a4e779da8e519bcfb7c1f3f56c9c0",
+      "remote_balance": "0x37785d2ecd00",
+      "state": {
+        "state_name": "ChannelReady"
+      }
+    },
+    {
+      "channel_id": "0x93e3b1d80718b9a28b94d3151006fe50deccae9c0ae592dffcb93de093d6ba9b",
+      "local_balance": "0x0",
+      "peer_id": null,
+      "pubkey": "02a64b8993f33b2ebd37a4de1c9441f491291a4e779da8e519bcfb7c1f3f56c9c0",
+      "remote_balance": "0x37785d3ecd00",
+      "state": {
+        "state_name": "ChannelReady"
+      }
+    }
+  ]
+}

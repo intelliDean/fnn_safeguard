@@ -1,0 +1,13 @@
+{
+  "addresses": [
+    "/ip4/127.0.0.1/tcp/8345/p2p/QmSRcPqUn4aQrKHXyCDjGn2qBVf43tWBDS2Wj9QDUZXtZp"
+  ],
+  "chain_hash": "0xeac93bcfaad487169f94615169b26f8363de2a70ade4dbb6c602859b43109f32",
+  "channel_count": "0x7",
+  "commit_hash": "e6cb7ac 2026-08-06",
+  "node_name": "fiber-2",
+  "peers_count": "0x1",
+  "pending_channel_count": "0x0",
+  "pubkey": "02bcbd0e0d811d13363af1e5998f56e74e6aab8a7aa44005e1ce7d696a4d3f10f6",
+  "version": "0.9.0"
+}

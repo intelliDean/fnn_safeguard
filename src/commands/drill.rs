@@ -153,6 +153,8 @@ impl DrillCommand {
         let expected_pubkey = manifest.as_ref().map(|m| m.node_public_key.as_str());
 
         // Execute drill using either Docker isolation or Process isolation
+        let mut _docker_temp_holder = None;
+        let mut _process_sandbox_holder = None;
         let execution = if opts.use_docker {
             let image = opts
                 .docker_image
@@ -167,6 +169,8 @@ impl DrillCommand {
                 target_temp.path(),
                 expected_pubkey,
             )?;
+            let restored_dir = docker_res.restored_dir.clone();
+            _docker_temp_holder = Some(target_temp);
 
             UnifiedExecution {
                 backup_valid,
@@ -183,7 +187,7 @@ impl DrillCommand {
                 restore_stderr: docker_res.restore_stderr.clone(),
                 validate_stdout: docker_res.validate_stdout.clone(),
                 validate_stderr: docker_res.validate_stderr.clone(),
-                restored_dir: docker_res.restored_dir.clone(),
+                restored_dir,
                 docker_result: Some(docker_res),
             }
         } else {
@@ -192,6 +196,8 @@ impl DrillCommand {
 
             let proc_res =
                 sandbox.run_restore_drill(&backup_dir, opts.fnn_bin.as_deref(), expected_pubkey)?;
+            let restored_dir = proc_res.restored_dir.clone();
+            _process_sandbox_holder = Some(sandbox);
 
             UnifiedExecution {
                 backup_valid: proc_res.backup_valid,
@@ -209,7 +215,7 @@ impl DrillCommand {
                 restore_stderr: proc_res.restore_stderr.clone(),
                 validate_stdout: proc_res.validate_stdout.clone(),
                 validate_stderr: proc_res.validate_stderr.clone(),
-                restored_dir: proc_res.restored_dir.clone(),
+                restored_dir,
             }
         };
 
@@ -369,11 +375,19 @@ impl DrillCommand {
             Err(_) => 18239,
         };
 
+        let has_dev_spec = restored_dir.join("dev.toml").exists();
+        let chain_name = if has_dev_spec { "dev.toml" } else { "testnet" };
+        let ckb_url = if has_dev_spec {
+            "http://127.0.0.1:8114"
+        } else {
+            "https://testnet.ckbapp.dev/"
+        };
+
         // Write config.yml with fiber, ckb, and rpc enabled
         let config_path = restored_dir.join("config.yml");
         let minimal_config = format!(
-            "services:\n  - fiber\n  - ckb\n  - rpc\nfiber:\n  listening_addr: \"/ip4/127.0.0.1/tcp/0\"\n  chain: testnet\nckb:\n  rpc_url: \"https://testnet.ckbapp.dev/\"\nrpc:\n  listening_addr: \"127.0.0.1:{}\"\n",
-            ephemeral_port
+            "services:\n  - fiber\n  - ckb\n  - rpc\nfiber:\n  listening_addr: \"/ip4/127.0.0.1/tcp/0\"\n  chain: {}\nckb:\n  rpc_url: \"{}\"\nrpc:\n  listening_addr: \"127.0.0.1:{}\"\n",
+            chain_name, ckb_url, ephemeral_port
         );
         if let Err(e) = fs::write(&config_path, &minimal_config) {
             return RestoredDaemonInventory {
@@ -385,6 +399,9 @@ impl DrillCommand {
                 ..Default::default()
             };
         }
+
+        let sk_pass = std::env::var("FIBER_SECRET_KEY_PASSWORD")
+            .unwrap_or_else(|_| "safeguard_ephemeral_drill_key".to_string());
 
         let resolved_bin = ProcessIsolationSandbox::find_fnn_binary(explicit_fnn_bin);
 
@@ -399,7 +416,7 @@ impl DrillCommand {
                 .arg(restored_dir)
                 .arg("-c")
                 .arg(&config_path)
-                .env("FIBER_SECRET_KEY_PASSWORD", "safeguard_ephemeral_drill_key")
+                .env("FIBER_SECRET_KEY_PASSWORD", &sk_pass)
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
                 .spawn()
@@ -444,7 +461,7 @@ impl DrillCommand {
                     "-v",
                     &format!("{}:/target", restored_dir.display()),
                     "-e",
-                    "FIBER_SECRET_KEY_PASSWORD=safeguard_ephemeral_drill_key",
+                    &format!("FIBER_SECRET_KEY_PASSWORD={}", sk_pass),
                     "--entrypoint",
                     "fnn",
                     img,

@@ -51,26 +51,41 @@ impl ConfigSanitizer {
             || lower.contains("private_key")
     }
 
-    /// Auto-discovers the backup directory from a base node directory.
+    /// Auto-discovers the latest backup directory from a base node directory.
     pub fn discover_latest_backup(base_dir: impl AsRef<Path>) -> Option<PathBuf> {
-        let backups_dir = base_dir.as_ref().join("backups");
-        if !backups_dir.exists() || !backups_dir.is_dir() {
-            return None;
-        }
+        let base = base_dir.as_ref();
+        let search_dirs = [base.join("fiber").join("backups"), base.join("backups")];
 
-        let mut candidates = Vec::new();
-        if let Ok(entries) = fs::read_dir(&backups_dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
-                let path = entry.path();
-                if path.is_dir() {
-                    candidates.push(path);
+        for search_dir in &search_dirs {
+            if search_dir.exists() && search_dir.is_dir() {
+                let mut candidates = Vec::new();
+                if let Ok(entries) = fs::read_dir(search_dir) {
+                    for entry in entries.filter_map(|e| e.ok()) {
+                        let path = entry.path();
+                        if path.is_dir()
+                            && (path.join("sk").exists()
+                                || path.join("manifest.json").exists()
+                                || path.join("db").exists())
+                        {
+                            candidates.push(path);
+                        }
+                    }
+                }
+                if !candidates.is_empty() {
+                    candidates.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+                    return candidates.into_iter().next();
                 }
             }
         }
 
-        // Sort descending by directory name (timestamps like 1725800000000)
-        candidates.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
-        candidates.into_iter().next()
+        // Fallback: check if base itself is a backup directory
+        if base.join("sk").exists()
+            && (base.join("manifest.json").exists() || base.join("db").exists())
+        {
+            return Some(base.to_path_buf());
+        }
+
+        None
     }
 }
 

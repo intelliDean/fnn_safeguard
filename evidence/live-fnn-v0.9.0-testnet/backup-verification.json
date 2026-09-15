@@ -1,11 +1,11 @@
 {
   "is_valid": true,
   "database_type": "rocksdb",
-  "database_path": "/mnt/data/Projects/fnn_safeguard/scratch/testnet_node1/fiber/backups/1789070937789/db",
-  "ckb_key_path": "/mnt/data/Projects/fnn_safeguard/scratch/testnet_node1/fiber/backups/1789070937789/key",
-  "fiber_key_path": "/mnt/data/Projects/fnn_safeguard/scratch/testnet_node1/fiber/backups/1789070937789/sk",
-  "derived_pubkey": "02297d34b5d228f17e374f25d4aab4c8afb5bb557b275e938b1d2c9671ff39ccd3",
-  "total_bytes": 31307,
-  "file_count": 10,
+  "database_path": "/home/dean/.gemini/antigravity-ide/brain/0ed7f8b2-f876-46e3-8a6b-955db604ae28/scratch/fiber/tests/nodes/1/fiber/backups/1789430640523/db",
+  "ckb_key_path": "/home/dean/.gemini/antigravity-ide/brain/0ed7f8b2-f876-46e3-8a6b-955db604ae28/scratch/fiber/tests/nodes/1/fiber/backups/1789430640523/key",
+  "fiber_key_path": "/home/dean/.gemini/antigravity-ide/brain/0ed7f8b2-f876-46e3-8a6b-955db604ae28/scratch/fiber/tests/nodes/1/fiber/backups/1789430640523/sk",
+  "derived_pubkey": "02a64b8993f33b2ebd37a4de1c9441f491291a4e779da8e519bcfb7c1f3f56c9c0",
+  "total_bytes": 109119,
+  "file_count": 15,
   "errors": []
 }

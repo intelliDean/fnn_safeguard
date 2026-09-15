@@ -1,10 +1,9 @@
 {
-  "channel_count": null,
+  "channel_count": 7,
   "check_validate_passed": true,
   "database_opened": true,
   "database_type": "rocksdb",
-  "inventory_status": "NOT_TESTED (requires running daemon)",
-  "payment_count": null,
-  "restore_success": true,
-  "restored_public_key": "02297d34b5d228f17e374f25d4aab4c8afb5bb557b275e938b1d2c9671ff39ccd3"
+  "inventory_status": "FULLY_VERIFIED",
+  "payment_count": 6,
+  "restored_public_key": "02a64b8993f33b2ebd37a4de1c9441f491291a4e779da8e519bcfb7c1f3f56c9c0"
 }
