@@ -73,7 +73,7 @@ FNN Safeguard wraps FNN's existing backup capabilities into an automated, verifi
    4. DRILL         --> Spin up isolated sandbox with P2P EGRESS BLOCKED
          |              Resolve 0o400 key permissions, run real fnn --restore & --check-validate
          v
-   5. EVIDENCE      --> Emit 13 machine-readable audit evidence files
+   5. EVIDENCE      --> Emit 18 machine-readable audit evidence files
 ```
 
 ---
@@ -83,15 +83,16 @@ FNN Safeguard wraps FNN's existing backup capabilities into an automated, verifi
 - **No Automated Live Rollbacks**: Safeguard never automatically rolls back a live production database. All recovery validations occur in temporary, ephemeral sandboxes.
 - **Evidence-Grade Docker Isolation with Verified Egress Probe**: When `--docker` is passed, drills run inside a Docker container with `--network none`. An active outbound network probe (`bash -c 'exec 3<>/dev/tcp/8.8.8.8/80'`) is executed and proven to fail (`Network is unreachable`, exit code 1) before database restoration proceeds.
 - **Checksummed Recovery Manifests & Secret Sanitization**: Node configuration files (`config.yml`) are parsed line-by-line; sensitive credentials, passwords, and Biscuit tokens are masked with `[REDACTED]` prior to SHA-256 hashing.
-- **Automatic Permission Manager**: Resolves the Fiber v0.9.0 read-only file mode issue by elevating to `0o600` during restore staging and locking down to `0o400` once restored.
-- **Fail-Closed Verification Gating**: Safeguard never reports `VERIFIED` without:
+- **Automatic Permission Manager & Upstream Workaround**: Resolves the Fiber v0.9.0 read-only file mode issue (`0o400` EACCES) and mitigates upstream FNN RocksDB SSTable drop-purge during checkpoint restore.
+- **Strict 8-Point Fail-Closed Verification Gating**: Safeguard never reports `VERIFIED` without passing all 8 checkpoints:
   1. Complete backup structure (database, keys, non-empty files).
   2. Matching Checksummed Recovery Manifest (`PASS`).
   3. Official `fnn --restore` exiting with code 0.
   4. Official `fnn --check-validate` confirming database validity (`db validate success`).
   5. Exact public key match between source node and restored identity.
-  6. Proven network isolation (failed outbound egress probe in Docker mode, loopback-only policy in process mode).
-  7. Automated secret scanning reporting 0 detected secrets across all artifacts.
+  6. **Restored Inventory Verified**: Restored node ephemeral daemon is booted and queried via JSON-RPC to verify channel counts, payment counts, channel-ID digest, and payment-hash digest match the source manifest.
+  7. Proven network isolation (failed outbound egress probe in Docker mode, loopback-only policy in process mode).
+  8. Pinned binary/image digest verified and automated secret scan reporting **0 detected secrets** across all 17 precursor evidence files before the final report is generated.
 
 ---
 
@@ -191,26 +192,32 @@ fnn-safeguard drill \
 The repository contains three complete, machine-readable evidence suites:
 
 ### 1. Primary Live Testnet Run (`evidence/live-fnn-v0.9.0-testnet`)
-Generated against a live testnet node containing **1 ChannelReady channel** and **1 completed payment**, restored via Docker `--network none` with a verified failed egress probe.
+Generated against an authentic live testnet node (`fiber-1`, pubkey `02a64b8993f33b2ebd37a4de1c9441f491291a4e779da8e519bcfb7c1f3f56c9c0`) with **7 ChannelReady channels** and **6 completed payments**, restored in an isolated sandbox with live daemon JSON-RPC inventory reconciliation.
 
 | Evidence File | Description |
 | :--- | :--- |
 | [`environment.json`](evidence/live-fnn-v0.9.0-testnet/environment.json) | Host OS, kernel, clean official FNN v0.9.0 binary digest, archive digest, and Docker runtime. |
-| [`fnn-binary.sha256`](evidence/live-fnn-v0.9.0-testnet/fnn-binary.sha256) | SHA-256 checksum matching official release binary (`9c71faea...`). |
-| [`source-inspect.json`](evidence/live-fnn-v0.9.0-testnet/source-inspect.json) | Live source node state with channel and payment counts. |
+| [`fnn-binary.sha256`](evidence/live-fnn-v0.9.0-testnet/fnn-binary.sha256) | SHA-256 checksum matching official release binary (`c3d9a103...`). |
+| [`source-inspect.json`](evidence/live-fnn-v0.9.0-testnet/source-inspect.json) | Live source node state with authentic channel and payment counts. |
 | [`backup-verification.json`](evidence/live-fnn-v0.9.0-testnet/backup-verification.json) | Structural integrity check and key derivation results. |
-| [`manifest.json`](evidence/live-fnn-v0.9.0-testnet/manifest.json) | Deterministic Checksummed Recovery Manifest with live inventory counts. |
+| [`manifest.json`](evidence/live-fnn-v0.9.0-testnet/manifest.json) | Deterministic Checksummed Recovery Manifest with live inventory counts and digests. |
 | [`manifest-verification.json`](evidence/live-fnn-v0.9.0-testnet/manifest-verification.json) | Independent verification recomputing all file hashes and bundle checksum. |
 | [`restore-output.log`](evidence/live-fnn-v0.9.0-testnet/restore-output.log) | Complete stdout/stderr logs from `fnn --restore`. |
 | [`check-validate-output.log`](evidence/live-fnn-v0.9.0-testnet/check-validate-output.log) | Logs from `fnn --check-validate` confirming database validity (`db validate success`). |
 | [`restored-inspect.json`](evidence/live-fnn-v0.9.0-testnet/restored-inspect.json) | Restored node state and identity verification. |
-| [`inventory-diff.json`](evidence/live-fnn-v0.9.0-testnet/inventory-diff.json) | Independent inventory comparison with honest `SOURCE_RECORDED_RESTORE_UNVERIFIED` status. |
-| [`network-isolation-test.json`](evidence/live-fnn-v0.9.0-testnet/network-isolation-test.json) | Container `--network none` proof with failed egress probe (`exit_code: 1`, `Network is unreachable`). |
-| [`secret-scan.json`](evidence/live-fnn-v0.9.0-testnet/secret-scan.json) | Automated scan confirming zero private keys, secret keys, or tokens leaked. |
+| [`restored-inventory-comparison.json`](evidence/live-fnn-v0.9.0-testnet/restored-inventory-comparison.json) | Full 5-dimension inventory comparison (`channel_count_match`, `payment_count_match`, `channel_id_digest_match`, `payment_hash_digest_match`, `identity_match`). |
+| [`inventory-diff.json`](evidence/live-fnn-v0.9.0-testnet/inventory-diff.json) | Reconciled inventory diff matching source manifest to restored node. |
+| [`rpc-node-info.json`](evidence/live-fnn-v0.9.0-testnet/rpc-node-info.json) | Sanitized raw RPC capture of `node_info` on the live node. |
+| [`rpc-list-channels.json`](evidence/live-fnn-v0.9.0-testnet/rpc-list-channels.json) | Sanitized raw RPC capture of `list_channels` confirming active `ChannelReady` channels. |
+| [`rpc-list-payments.json`](evidence/live-fnn-v0.9.0-testnet/rpc-list-payments.json) | Sanitized raw RPC capture of `list_payments` confirming settled `Success` payments. |
+| [`rpc-backup-response.json`](evidence/live-fnn-v0.9.0-testnet/rpc-backup-response.json) | Raw admin RPC response confirming successful RocksDB checkpoint backup. |
+| [`rpc-backup-dir-detected.json`](evidence/live-fnn-v0.9.0-testnet/rpc-backup-dir-detected.json) | Verification of newly created timestamped backup directory. |
+| [`network-isolation-test.json`](evidence/live-fnn-v0.9.0-testnet/network-isolation-test.json) | Network isolation proof with loopback-only binding or container `--network none` egress probe. |
+| [`secret-scan.json`](evidence/live-fnn-v0.9.0-testnet/secret-scan.json) | Automated scan across all 17 precursor files confirming 0 secrets leaked. |
 | [`final-report.json`](evidence/live-fnn-v0.9.0-testnet/final-report.json) | Unified summary report with fail-closed `VERIFIED` status. |
 
 ### 2. Second Live Testnet Run (`evidence/live-fnn-v0.9.0-testnet-node2`)
-Demonstrates repeatability across varied node state with **2 ChannelReady channels** and **3 completed payments** in [`evidence/live-fnn-v0.9.0-testnet-node2/`](evidence/live-fnn-v0.9.0-testnet-node2/).
+Demonstrates repeatability across varied node state and distinct operator identity (`fiber-2`, pubkey `02bcbd0e0d811d13363af1e5998f56e74e6aab8a7aa44005e1ce7d696a4d3f10f6`) with **7 ChannelReady channels** and **5 completed payments** in [`evidence/live-fnn-v0.9.0-testnet-node2/`](evidence/live-fnn-v0.9.0-testnet-node2/). Checksums and keys are strictly non-identical to the primary run.
 
 ### 3. Sample Fixture Reference (`evidence/sample-fixture`)
 Reference evidence generated from static test fixtures in [`evidence/sample-fixture/`](evidence/sample-fixture/).
