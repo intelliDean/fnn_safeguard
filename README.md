@@ -197,7 +197,7 @@ Generated against an authentic live testnet node (`fiber-1`, pubkey `02a64b8993f
 | Evidence File | Description |
 | :--- | :--- |
 | [`environment.json`](evidence/live-fnn-v0.9.0-testnet/environment.json) | Host OS, kernel, clean official FNN v0.9.0 binary digest, archive digest, and Docker runtime. |
-| [`fnn-binary.sha256`](evidence/live-fnn-v0.9.0-testnet/fnn-binary.sha256) | SHA-256 checksum matching official release binary (`c3d9a103...`). |
+| [`fnn-binary.sha256`](evidence/live-fnn-v0.9.0-testnet/fnn-binary.sha256) | SHA-256 checksum matching official release binary (`9c71faea...`). |
 | [`source-inspect.json`](evidence/live-fnn-v0.9.0-testnet/source-inspect.json) | Live source node state with authentic channel and payment counts. |
 | [`backup-verification.json`](evidence/live-fnn-v0.9.0-testnet/backup-verification.json) | Structural integrity check and key derivation results. |
 | [`manifest.json`](evidence/live-fnn-v0.9.0-testnet/manifest.json) | Deterministic Checksummed Recovery Manifest with live inventory counts and digests. |
