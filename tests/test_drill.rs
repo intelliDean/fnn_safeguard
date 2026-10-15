@@ -5,10 +5,10 @@ use std::fs;
 use tempfile::TempDir;
 
 #[test]
-fn test_restore_drill_with_readonly_key_permission_bug() {
+fn test_restore_drill_with_readonly_key_permission_handling() {
     if ProcessIsolationSandbox::find_fnn_binary(None).is_none() {
         eprintln!(
-            "Skipping test_restore_drill_with_readonly_key_permission_bug: fnn binary not found"
+            "Skipping test_restore_drill_with_readonly_key_permission_handling: fnn binary not found"
         );
         return;
     }
@@ -40,7 +40,7 @@ fn test_restore_drill_with_readonly_key_permission_bug() {
     let sandbox = ProcessIsolationSandbox::new().unwrap();
 
     // 4. Intentionally pre-create a destination `fiber/sk` file with 0o400 (read-only)
-    // to simulate the exact FNN v0.9.0 restore crash bug!
+    // to simulate the exact FNN v0.9.0 restore EACCES permission failure!
     let target_fiber_dir = sandbox.path().join("restored_node").join("fiber");
     fs::create_dir_all(&target_fiber_dir).unwrap();
     let pre_existing_sk = target_fiber_dir.join("sk");

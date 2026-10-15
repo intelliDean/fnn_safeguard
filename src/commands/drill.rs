@@ -1609,10 +1609,17 @@ impl DrillCommand {
         scanned_names.sort();
 
         let secret_scan = serde_json::json!({
-            "scanned_files": scanned_names,
-            "patterns_checked": secret_patterns,
+            "files_scanned": scanned_names.len(),
             "known_secrets_checked": known_secrets.len(),
+            "representations_checked": [
+                "raw",
+                "hex",
+                "base64"
+            ],
+            "patterns_checked": secret_patterns,
+            "matches_found": secrets_detected,
             "secrets_detected": secrets_detected,
+            "scanned_files": scanned_names,
             "status": if secrets_detected == 0 { "PASS" } else { "FAIL" },
         });
         fs::write(

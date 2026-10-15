@@ -127,7 +127,7 @@ impl ProcessIsolationSandbox {
         let target_sk = restored_fiber_dir.join("sk");
         let target_key = restored_ckb_dir.join("key");
 
-        // 4. Proactively handle the documented 0o400 read-only key permission bug
+        // 4. Proactively handle the documented 0o400 read-only key permission behavior (EACCES)
         Self::prepare_key_permissions(&target_sk, &target_key)?;
 
         // 5. Execute real `fnn --restore` and `fnn --check-validate`
