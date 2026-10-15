@@ -196,11 +196,7 @@ impl BackupCommand {
             return (LiveNodeData::default(), RpcCaptures::default());
         };
 
-        let network = if node_info.chain_hash.starts_with("0x92b1") {
-            "mainnet".to_string()
-        } else {
-            "testnet".to_string()
-        };
+        let network = crate::rpc::types::classify_network(&node_info.chain_hash).to_string();
 
         // Safe to capture in full — node_info contains no private keys
         let node_info_json = serde_json::to_value(&node_info).unwrap_or(serde_json::Value::Null);

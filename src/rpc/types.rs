@@ -380,6 +380,24 @@ pub struct ListPaymentsResult {
     pub last_cursor: Option<String>,
 }
 
+/// Deterministically classifies the network based on the CKB chain hash or name.
+pub fn classify_network(chain_hash_or_name: &str) -> &'static str {
+    let lower = chain_hash_or_name.to_lowercase();
+    if lower == "0x92b197aa1fba41650a6b63fa8f6d68725ac4f3545c98358182d6b2a04e3fa529"
+        || lower == "mainnet"
+        || lower.starts_with("0x92b1")
+    {
+        "mainnet"
+    } else if lower == "0x10636e234964790918b7415d02b577442646173ac49e942b0d24994c60835f18"
+        || lower == "testnet"
+        || lower.starts_with("0x1063")
+    {
+        "testnet"
+    } else {
+        "devnet/custom"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

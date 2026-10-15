@@ -66,7 +66,7 @@ fn test_restore_drill_with_readonly_key_permission_bug() {
     assert!(report.backup_valid);
     assert!(report.database_opened);
     assert!(report.identity_match);
-    assert!(report.p2p_egress_blocked);
+    assert!(!report.p2p_egress_blocked); // Process mode loopback binding does not prove network isolation
     assert!(report.permission_workaround_applied);
     assert_eq!(report.restored_pubkey, expected_pubkey);
 

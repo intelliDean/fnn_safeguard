@@ -1,0 +1,15 @@
+{
+  "source_state_immutable": "PASS",
+  "backup_structure_valid": "PASS",
+  "manifest_integrity": "PASS",
+  "native_restore": "FAIL",
+  "fallback_recovery": "PASS",
+  "database_valid": "PASS",
+  "identity_equivalence": "PASS",
+  "channel_state_equivalence": "PASS",
+  "payment_state_equivalence": "PASS",
+  "network_isolation": "NOT_PROVEN",
+  "secret_leakage": "PASS",
+  "final_verdict": "VERIFIED_WITH_FALLBACK",
+  "verdict_reason": "Observed native restore failure; verified via Safeguard checkpoint recovery; network isolation not proven (process mode)"
+}

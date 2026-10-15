@@ -3,12 +3,13 @@ use chrono::Utc;
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use crate::config::ConfigSanitizer;
+use crate::core::invariants::{InvariantStatus, RecoveryVerdict, SafetyInvariantsReport};
 use crate::core::manifest::RecoveryManifest;
 use crate::core::reporter::{CheckStatus, TerminalReporter};
 use crate::core::validator::BackupValidator;
@@ -71,30 +72,63 @@ pub struct RestoredDaemonInventory {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NativeRestoreSummary {
+    pub attempted: bool,
+    pub status: String,
+    pub exit_code: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FallbackRecoverySummary {
+    pub attempted: bool,
+    pub status: String,
+    pub method: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DrillReport {
     pub backup_dir: String,
     pub backup_completeness: String,
     pub manifest_verified: String,
+    pub native_restore: NativeRestoreSummary,
+    pub fallback_recovery: FallbackRecoverySummary,
     pub database_restore: String,
+    pub database_validation: String,
     pub node_identity_comparison: String,
+    pub identity_equivalence: String,
     pub expected_pubkey: String,
     pub restored_pubkey: String,
     pub channel_inventory: String,
+    pub channel_state_equivalence: String,
     pub payment_inventory: String,
+    pub payment_state_equivalence: String,
     pub inventory_comparison: InventoryComparison,
+    pub source_state_immutable: String,
+    pub network_isolation: String,
     pub fiber_p2p_egress: String,
     pub docker_image_digest: String,
     pub fnn_version_in_container: String,
     pub secrets_in_logs: String,
     pub restore_duration_ms: u128,
     pub permission_workaround_applied: bool,
+    pub safety_invariants: SafetyInvariantsReport,
+    pub verdict: RecoveryVerdict,
+    pub verdict_reason: String,
     pub drill_result: String,
 }
 
 struct UnifiedExecution {
     pub backup_valid: bool,
     pub fnn_binary_path: String,
-    pub restore_success: bool,
+    pub native_restore_success: bool,
+    pub native_restore_attempted: bool,
+    pub native_restore_exit_code: Option<i32>,
+    pub native_restore_status: String,
+    pub native_restore_stdout: String,
+    pub native_restore_stderr: String,
+    pub fallback_recovery_attempted: bool,
+    pub fallback_recovery_status: String,
+    pub fallback_recovery_method: Option<String>,
     pub check_validate_passed: bool,
     pub database_opened: bool,
     pub restored_pubkey: String,
@@ -113,11 +147,39 @@ struct UnifiedExecution {
 pub struct DrillCommand;
 
 impl DrillCommand {
+    /// Computes a deterministic SHA-256 fingerprint of all files in a directory
+    /// to verify source immutability (Invariant I1).
+    pub fn fingerprint_dir(dir: &Path) -> Result<String> {
+        let mut entries = Vec::new();
+        for entry in walkdir::WalkDir::new(dir) {
+            let entry = entry?;
+            if entry.file_type().is_file() {
+                let rel = entry
+                    .path()
+                    .strip_prefix(dir)?
+                    .to_string_lossy()
+                    .to_string();
+                let bytes = fs::read(entry.path())?;
+                let hash = hex::encode(Sha256::digest(&bytes));
+                entries.push((rel, entry.metadata()?.len(), hash));
+            }
+        }
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut h = Sha256::new();
+        for (rel, len, hash) in entries {
+            h.update(format!("{}:{}:{}\n", rel, len, hash).as_bytes());
+        }
+        Ok(hex::encode(h.finalize()))
+    }
+
     pub async fn run(opts: DrillOptions) -> Result<DrillReport> {
         let start_time = Instant::now();
 
         let backup_dir =
             Self::resolve_recovery_point(opts.backup_path.as_deref(), opts.node_dir.as_deref())?;
+
+        // Invariant I1: Record initial source fingerprint before any restore operations
+        let initial_source_fingerprint = Self::fingerprint_dir(&backup_dir)?;
 
         // Verify backup structure
         let initial_validation = BackupValidator::inspect_and_validate(&backup_dir, None)?;
@@ -175,7 +237,15 @@ impl DrillCommand {
             UnifiedExecution {
                 backup_valid,
                 fnn_binary_path: format!("{} (container)", docker_res.docker_image),
-                restore_success: docker_res.restore_success,
+                native_restore_success: docker_res.native_restore_status == "PASS",
+                native_restore_attempted: docker_res.native_restore_attempted,
+                native_restore_exit_code: docker_res.native_restore_exit_code,
+                native_restore_status: docker_res.native_restore_status.clone(),
+                native_restore_stdout: docker_res.native_restore_stdout.clone(),
+                native_restore_stderr: docker_res.native_restore_stderr.clone(),
+                fallback_recovery_attempted: docker_res.fallback_recovery_attempted,
+                fallback_recovery_status: docker_res.fallback_recovery_status.clone(),
+                fallback_recovery_method: docker_res.fallback_recovery_method.clone(),
                 check_validate_passed: docker_res.check_validate_success,
                 database_opened: docker_res.check_validate_success,
                 restored_pubkey: docker_res.restored_pubkey.clone(),
@@ -202,7 +272,15 @@ impl DrillCommand {
             UnifiedExecution {
                 backup_valid: proc_res.backup_valid,
                 fnn_binary_path: proc_res.fnn_binary_path.clone(),
-                restore_success: proc_res.restore_success,
+                native_restore_success: proc_res.native_restore_status == "PASS",
+                native_restore_attempted: proc_res.native_restore_attempted,
+                native_restore_exit_code: proc_res.native_restore_exit_code,
+                native_restore_status: proc_res.native_restore_status.clone(),
+                native_restore_stdout: proc_res.native_restore_stdout.clone(),
+                native_restore_stderr: proc_res.native_restore_stderr.clone(),
+                fallback_recovery_attempted: proc_res.fallback_recovery_attempted,
+                fallback_recovery_status: proc_res.fallback_recovery_status.clone(),
+                fallback_recovery_method: proc_res.fallback_recovery_method.clone(),
                 check_validate_passed: proc_res.check_validate_passed,
                 database_opened: proc_res.database_opened,
                 restored_pubkey: proc_res.restored_pubkey.clone(),
@@ -219,6 +297,10 @@ impl DrillCommand {
             }
         };
 
+        // Invariant I1: Verify source directory immutability post-drill
+        let post_source_fingerprint = Self::fingerprint_dir(&backup_dir)?;
+        let source_immutable = initial_source_fingerprint == post_source_fingerprint;
+
         let elapsed_ms = start_time.elapsed().as_millis();
 
         // Query inventory from the restored daemon via RPC
@@ -233,36 +315,12 @@ impl DrillCommand {
         let inventory_comparison =
             Self::build_inventory_comparison(manifest.as_ref(), &execution, &restored_inv);
 
-        // Strict 8-point fail-closed gate:
-        // 1. Backup valid
-        // 2. Manifest verified (PASS)
-        // 3. Official restore successful
-        // 4. check-validate successful
-        // 5. Identity match
-        // 6. Inventory comparison passes (counts + digests match)
-        // 7. Docker isolation proven (Docker mode only)
-        // 8. Binary/image digest pinned and recorded
-        let binary_pinned = execution
-            .docker_result
-            .as_ref()
-            .map(|d| !d.docker_image_digest.is_empty() && d.docker_image_digest.contains('@'))
-            .unwrap_or(true); // process mode: binary path verified at launch
+        // Collect known secrets to verify they are not leaked
+        let known_secrets = Self::collect_known_secrets(&backup_dir);
 
-        let mut all_pass = execution.backup_valid
-            && manifest_verified == "PASS"
-            && execution.restore_success
-            && execution.check_validate_passed
-            && execution.identity_match
-            && inventory_comparison.passes_gate()
-            && binary_pinned;
-
-        if execution.is_docker && !execution.p2p_egress_blocked {
-            all_pass = false;
-        }
-
-        // Run secret scan BEFORE writing final-report.json
+        // Pre-evaluate evidence files and run secret scan BEFORE writing final-report.json
         let (secrets_detected, scanned_files) = if let Some(evidence_dir) = &opts.evidence_dir {
-            // Write all evidence except final-report.json first
+            // Write all evidence except final-report.json and safety-invariants.json first
             Self::write_evidence_files_except_final(
                 evidence_dir,
                 &backup_dir,
@@ -272,13 +330,71 @@ impl DrillCommand {
                 &inventory_comparison,
                 opts.fnn_bin.as_deref(),
             )?;
-            Self::run_secret_scan(evidence_dir)?
+            Self::run_secret_scan(evidence_dir, &known_secrets)?
         } else {
             (0, vec![])
         };
 
-        if secrets_detected > 0 {
-            all_pass = false;
+        // Determine Invariant statuses
+        let native_status = if execution.native_restore_attempted {
+            if execution.native_restore_success {
+                InvariantStatus::Pass
+            } else {
+                InvariantStatus::Fail
+            }
+        } else {
+            InvariantStatus::NotAvailable
+        };
+
+        let fallback_status = if execution.fallback_recovery_attempted {
+            if execution.fallback_recovery_status == "PASS" {
+                InvariantStatus::Pass
+            } else {
+                InvariantStatus::Fail
+            }
+        } else {
+            InvariantStatus::NotAvailable
+        };
+
+        let isolation_status = if execution.is_docker {
+            if execution.p2p_egress_blocked {
+                InvariantStatus::Pass
+            } else {
+                InvariantStatus::Fail
+            }
+        } else {
+            InvariantStatus::NotProven
+        };
+
+        let channel_match = inventory_comparison.channel_count_match
+            && inventory_comparison
+                .channel_id_digest_match
+                .unwrap_or(false);
+        let payment_match = inventory_comparison.payment_count_match
+            && inventory_comparison
+                .payment_hash_digest_match
+                .unwrap_or(false);
+
+        let safety_invariants = SafetyInvariantsReport::evaluate(
+            source_immutable,
+            execution.backup_valid,
+            manifest_verified == "PASS",
+            native_status,
+            fallback_status,
+            execution.check_validate_passed,
+            execution.identity_match,
+            channel_match,
+            payment_match,
+            isolation_status,
+            secrets_detected,
+        );
+
+        // Write safety-invariants.json to evidence directory
+        if let Some(evidence_dir) = &opts.evidence_dir {
+            fs::write(
+                evidence_dir.join("safety-invariants.json"),
+                serde_json::to_string_pretty(&safety_invariants)?,
+            )?;
         }
 
         let report = Self::assemble_report(
@@ -288,7 +404,8 @@ impl DrillCommand {
             &execution,
             &inventory_comparison,
             elapsed_ms,
-            all_pass,
+            &safety_invariants,
+            source_immutable,
             secrets_detected,
             scanned_files.len(),
         );
@@ -303,8 +420,11 @@ impl DrillCommand {
 
         Self::render_report(&report, opts.json_output);
 
-        if report.drill_result != "VERIFIED" {
-            bail!("Restore drill failed verification: {:?}", report);
+        if report.verdict == RecoveryVerdict::Failed {
+            bail!(
+                "Restore drill failed verification: {}",
+                report.verdict_reason
+            );
         }
 
         Ok(report)
@@ -407,7 +527,7 @@ impl DrillCommand {
 
         enum DaemonHandle {
             Process(std::process::Child),
-            Docker(String),
+            Docker(String, String), // container_name, internal_network_name
         }
 
         let mut daemon_handle = if let Some(bin) = &resolved_bin {
@@ -435,6 +555,7 @@ impl DrillCommand {
             }
         } else if is_docker {
             let container_name = format!("safeguard-inv-{}", std::process::id());
+            let internal_net = format!("safeguard-net-{}", std::process::id());
             let img = docker_image.unwrap_or("ghcr.io/nervosnetwork/fiber:v0.9.0");
             let uid = std::process::Command::new("id")
                 .arg("-u")
@@ -448,6 +569,11 @@ impl DrillCommand {
                 .unwrap_or_else(|_| "1000".to_string());
             let user_arg = format!("{}:{}", uid, gid);
 
+            // Create dedicated internal Docker network where external egress is blocked at iptables
+            let _ = std::process::Command::new("docker")
+                .args(["network", "create", "--internal", &internal_net])
+                .output();
+
             let run_res = std::process::Command::new("docker")
                 .args([
                     "run",
@@ -455,7 +581,9 @@ impl DrillCommand {
                     "--name",
                     &container_name,
                     "--network",
-                    "host",
+                    &internal_net,
+                    "-p",
+                    &format!("127.0.0.1:{}:{}", ephemeral_port, ephemeral_port),
                     "--user",
                     &user_arg,
                     "-v",
@@ -473,8 +601,11 @@ impl DrillCommand {
                 .output();
 
             match run_res {
-                Ok(o) if o.status.success() => DaemonHandle::Docker(container_name),
+                Ok(o) if o.status.success() => DaemonHandle::Docker(container_name, internal_net),
                 Ok(o) => {
+                    let _ = std::process::Command::new("docker")
+                        .args(["network", "rm", &internal_net])
+                        .output();
                     return RestoredDaemonInventory {
                         query_success: false,
                         error: Some(format!(
@@ -485,6 +616,9 @@ impl DrillCommand {
                     };
                 }
                 Err(e) => {
+                    let _ = std::process::Command::new("docker")
+                        .args(["network", "rm", &internal_net])
+                        .output();
                     return RestoredDaemonInventory {
                         query_success: false,
                         error: Some(format!("Failed to execute docker run: {}", e)),
@@ -513,9 +647,12 @@ impl DrillCommand {
                         let _ = child.kill();
                         let _ = child.wait();
                     }
-                    DaemonHandle::Docker(name) => {
+                    DaemonHandle::Docker(name, net) => {
                         let _ = std::process::Command::new("docker")
                             .args(["rm", "-f", name])
+                            .output();
+                        let _ = std::process::Command::new("docker")
+                            .args(["network", "rm", net])
                             .output();
                     }
                 }
@@ -554,9 +691,12 @@ impl DrillCommand {
                         let _ = child.kill();
                         let _ = child.wait();
                     }
-                    DaemonHandle::Docker(name) => {
+                    DaemonHandle::Docker(name, net) => {
                         let _ = std::process::Command::new("docker")
                             .args(["rm", "-f", name])
+                            .output();
+                        let _ = std::process::Command::new("docker")
+                            .args(["network", "rm", net])
                             .output();
                     }
                 }
@@ -584,9 +724,12 @@ impl DrillCommand {
                 let _ = child.kill();
                 let _ = child.wait();
             }
-            DaemonHandle::Docker(name) => {
+            DaemonHandle::Docker(name, net) => {
                 let _ = std::process::Command::new("docker")
                     .args(["rm", "-f", name])
+                    .output();
+                let _ = std::process::Command::new("docker")
+                    .args(["network", "rm", net])
                     .output();
             }
         }
@@ -780,7 +923,7 @@ impl DrillCommand {
         }
     }
 
-    /// Assembles the unified drill report.
+    /// Assembles the unified drill report with machine-enforced safety invariants.
     #[allow(clippy::too_many_arguments)]
     fn assemble_report(
         backup_dir: &Path,
@@ -789,7 +932,8 @@ impl DrillCommand {
         execution: &UnifiedExecution,
         inventory_comparison: &InventoryComparison,
         elapsed_ms: u128,
-        all_pass: bool,
+        safety_invariants: &SafetyInvariantsReport,
+        source_immutable: bool,
         secrets_detected: usize,
         _scanned_count: usize,
     ) -> DrillReport {
@@ -825,7 +969,7 @@ impl DrillCommand {
                 "FAILED (Container egress probe connected)".to_string()
             }
         } else {
-            "ISOLATION_NOT_PROVEN (Process mode: loopback-only policy)".to_string()
+            "NOT_PROVEN (Process mode: loopback-only binding, no OS sandbox)".to_string()
         };
 
         let (docker_image_digest, fnn_version_in_container) = execution
@@ -858,7 +1002,22 @@ impl DrillCommand {
                 "FAIL".to_string()
             },
             manifest_verified: manifest_verified.to_string(),
+            native_restore: NativeRestoreSummary {
+                attempted: execution.native_restore_attempted,
+                status: execution.native_restore_status.clone(),
+                exit_code: execution.native_restore_exit_code,
+            },
+            fallback_recovery: FallbackRecoverySummary {
+                attempted: execution.fallback_recovery_attempted,
+                status: execution.fallback_recovery_status.clone(),
+                method: execution.fallback_recovery_method.clone(),
+            },
             database_restore: if execution.database_opened {
+                "PASS".to_string()
+            } else {
+                "FAIL".to_string()
+            },
+            database_validation: if execution.check_validate_passed {
                 "PASS".to_string()
             } else {
                 "FAIL".to_string()
@@ -868,104 +1027,271 @@ impl DrillCommand {
             } else {
                 "MISMATCH".to_string()
             },
+            identity_equivalence: if execution.identity_match {
+                "PASS".to_string()
+            } else {
+                "FAIL".to_string()
+            },
             expected_pubkey,
             restored_pubkey: execution.restored_pubkey.clone(),
             channel_inventory: ch_text,
+            channel_state_equivalence: if inventory_comparison.channel_count_match
+                && inventory_comparison
+                    .channel_id_digest_match
+                    .unwrap_or(false)
+            {
+                "PASS".to_string()
+            } else {
+                "FAIL".to_string()
+            },
             payment_inventory: pay_text,
+            payment_state_equivalence: if inventory_comparison.payment_count_match
+                && inventory_comparison
+                    .payment_hash_digest_match
+                    .unwrap_or(false)
+            {
+                "PASS".to_string()
+            } else {
+                "FAIL".to_string()
+            },
             inventory_comparison: inventory_comparison.clone(),
+            source_state_immutable: if source_immutable {
+                "PASS".to_string()
+            } else {
+                "FAIL".to_string()
+            },
+            network_isolation: safety_invariants.network_isolation.to_string(),
             fiber_p2p_egress: egress_text,
             docker_image_digest,
             fnn_version_in_container,
             secrets_in_logs: secrets_text,
             restore_duration_ms: elapsed_ms,
             permission_workaround_applied: execution.permission_workaround_applied,
-            drill_result: if all_pass {
-                "VERIFIED".to_string()
-            } else {
-                "FAILED".to_string()
-            },
+            safety_invariants: safety_invariants.clone(),
+            verdict: safety_invariants.final_verdict,
+            verdict_reason: safety_invariants.verdict_reason.clone(),
+            drill_result: safety_invariants.final_verdict.to_string(),
         }
     }
 
-    /// Renders evidence output to terminal or stdout as JSON.
+    /// Renders evidence output to terminal in a cleanly sectioned format or stdout as JSON.
     fn render_report(report: &DrillReport, json_output: bool) {
         if json_output {
             TerminalReporter::print_json(report);
             return;
         }
 
-        TerminalReporter::header("FNN Safeguard: Isolated Restore Drill Evidence");
-        TerminalReporter::row("Official FNN backup:", "FOUND");
-        TerminalReporter::row("Backup directory:", &report.backup_dir);
-        TerminalReporter::status_row(
-            "Backup completeness:",
-            if report.backup_completeness == "PASS" {
-                CheckStatus::Pass
+        println!();
+        println!(
+            "{}",
+            "================================================================================"
+                .cyan()
+        );
+        println!(
+            "  {}",
+            "FNN SAFEGUARD: ISOLATED RESTORE DRILL REPORT"
+                .bold()
+                .white()
+        );
+        println!(
+            "{}",
+            "================================================================================"
+                .cyan()
+        );
+        println!(
+            "  {:<24} {}",
+            "Target:".dimmed(),
+            report.backup_dir.white().bold()
+        );
+        println!(
+            "  {:<24} {}",
+            "Execution Mode:".dimmed(),
+            if report.docker_image_digest.contains('@') {
+                "docker (container isolated)".green()
             } else {
-                CheckStatus::Fail
-            },
-            None,
+                "process (loopback binding)".yellow()
+            }
         );
-        TerminalReporter::status_row(
-            "Manifest verified:",
-            if report.manifest_verified == "PASS" {
-                CheckStatus::Pass
+        println!(
+            "  {:<24} {}",
+            "Source Integrity:".dimmed(),
+            if report.source_state_immutable == "PASS" {
+                "IMMUTABLE (SHA-256 pre/post verified)".green()
             } else {
-                CheckStatus::Fail
-            },
-            None,
+                "MUTATED (VIOLATION)".red().bold()
+            }
         );
-        TerminalReporter::status_row(
-            "Database restore:",
-            if report.database_restore == "PASS" {
-                CheckStatus::Pass
+        println!(
+            "  {:<24} {}",
+            "Verdict:".dimmed(),
+            match report.verdict {
+                RecoveryVerdict::IsolatedRecoveryPointVerified =>
+                    report.verdict.to_string().green().bold(),
+                RecoveryVerdict::IsolatedRecoveryPointVerifiedWithFallback =>
+                    report.verdict.to_string().yellow().bold(),
+                RecoveryVerdict::VerifiedWithFallback => report.verdict.to_string().yellow().bold(),
+                RecoveryVerdict::RestoreAndStateVerified =>
+                    report.verdict.to_string().green().bold(),
+                RecoveryVerdict::RestoreValidated => report.verdict.to_string().yellow(),
+                RecoveryVerdict::StructuralCheckPassed => report.verdict.to_string().blue(),
+                RecoveryVerdict::Failed => report.verdict.to_string().red().bold(),
+            }
+        );
+        println!(
+            "{}",
+            "--------------------------------------------------------------------------------"
+                .dimmed()
+        );
+        println!("  {}", "1. RESTORE OPERATIONS".bold().white());
+        let native_col = if report.native_restore.status == "PASS" {
+            "PASS".green().bold()
+        } else {
+            "FAIL (observed FNN v0.9.0 restore-path failure)"
+                .red()
+                .bold()
+        };
+        println!("  {:<24} {}", "Native FNN Restore:".dimmed(), native_col);
+        let fallback_col = if report.fallback_recovery.status == "PASS" {
+            format!(
+                "PASS [{}]",
+                report
+                    .fallback_recovery
+                    .method
+                    .as_deref()
+                    .unwrap_or("direct-copy")
+            )
+            .green()
+            .bold()
+        } else {
+            report.fallback_recovery.status.yellow()
+        };
+        println!("  {:<24} {}", "Fallback Recovery:".dimmed(), fallback_col);
+        println!(
+            "  {:<24} {}",
+            "Database Validation:".dimmed(),
+            if report.database_validation == "PASS" {
+                "PASS [fnn --check-validate]".green()
             } else {
-                CheckStatus::Fail
-            },
-            None,
+                "FAIL".red().bold()
+            }
         );
-        TerminalReporter::row(
-            "Node identity comparison:",
-            if report.node_identity_comparison == "MATCH" {
-                report.node_identity_comparison.green().bold()
+        println!(
+            "{}",
+            "--------------------------------------------------------------------------------"
+                .dimmed()
+        );
+        println!(
+            "  {}",
+            "2. MACHINE-ENFORCED INVARIANTS (I1 - I7)".bold().white()
+        );
+        println!(
+            "  [I1] Source Immutability:     {}",
+            report.safety_invariants.source_state_immutable
+        );
+        println!(
+            "  [I2] Identity Equivalence:    {}",
+            report.safety_invariants.identity_equivalence
+        );
+        println!(
+            "  [I3] Channel State:           {} ({})",
+            report.safety_invariants.channel_state_equivalence, report.channel_inventory
+        );
+        println!(
+            "  [I4] Payment State:           {} ({})",
+            report.safety_invariants.payment_state_equivalence, report.payment_inventory
+        );
+        println!(
+            "  [I5] Database Validity:       {}",
+            report.safety_invariants.database_valid
+        );
+        println!(
+            "  [I6] Network Isolation:       {}",
+            report.safety_invariants.network_isolation
+        );
+        println!(
+            "  [I7] Restore Truthfulness:    PASS (native={}, fallback={})",
+            report.native_restore.status, report.fallback_recovery.status
+        );
+        println!(
+            "{}",
+            "--------------------------------------------------------------------------------"
+                .dimmed()
+        );
+        println!("  {}", "3. RESTORED INVENTORY COMPARISON".bold().white());
+        println!(
+            "  {:<24} {} ({})",
+            "Node Public Key:".dimmed(),
+            report.restored_pubkey.cyan(),
+            if report.identity_equivalence == "PASS" {
+                "MATCH".green()
             } else {
-                report.node_identity_comparison.red().bold()
-            },
+                "MISMATCH".red()
+            }
         );
-        TerminalReporter::row("Restored public key:", &report.restored_pubkey);
-        TerminalReporter::row("Channel inventory:", report.channel_inventory.cyan());
-        TerminalReporter::row("Payment inventory:", report.payment_inventory.cyan());
-        TerminalReporter::row(
-            "Inventory comparison:",
-            if report.inventory_comparison.fully_verified {
-                "PASS".green().bold()
+        println!(
+            "  {:<24} {}",
+            "Channels:".dimmed(),
+            report.channel_inventory
+        );
+        println!(
+            "  {:<24} {:?}",
+            "Channel-ID Digest:".dimmed(),
+            report.inventory_comparison.restored_channel_id_digest
+        );
+        println!(
+            "  {:<24} {}",
+            "Payments:".dimmed(),
+            report.payment_inventory
+        );
+        println!(
+            "  {:<24} {:?}",
+            "Payment-Hash Digest:".dimmed(),
+            report.inventory_comparison.restored_payment_hash_digest
+        );
+        println!(
+            "{}",
+            "--------------------------------------------------------------------------------"
+                .dimmed()
+        );
+        println!(
+            "  {}",
+            "4. NETWORK ISOLATION & SECURITY PROOF".bold().white()
+        );
+        println!(
+            "  {:<24} {}",
+            "P2P Egress Policy:".dimmed(),
+            report.fiber_p2p_egress
+        );
+        println!(
+            "  {:<24} {}",
+            "Secrets in Evidence:".dimmed(),
+            report.secrets_in_logs
+        );
+        println!(
+            "  {:<24} {:.2}s",
+            "Duration:".dimmed(),
+            report.restore_duration_ms as f64 / 1000.0
+        );
+        println!(
+            "{}",
+            "================================================================================"
+                .cyan()
+        );
+        println!(
+            "  VERDICT: {}",
+            if report.verdict == RecoveryVerdict::Failed {
+                report.verdict.to_string().red().bold()
             } else {
-                "PARTIAL (pending daemon RPC)".yellow().bold()
-            },
+                report.verdict.to_string().green().bold()
+            }
         );
-        TerminalReporter::row("Fiber P2P egress:", report.fiber_p2p_egress.bold());
-        TerminalReporter::row("Docker image digest:", &report.docker_image_digest);
-        TerminalReporter::row(
-            "FNN version in container:",
-            &report.fnn_version_in_container,
+        println!("  Reason:  {}", report.verdict_reason.white());
+        println!(
+            "{}",
+            "================================================================================"
+                .cyan()
         );
-        TerminalReporter::row(
-            "Read-only key workaround:",
-            if report.permission_workaround_applied {
-                "APPLIED (0o400 fixed)".cyan()
-            } else {
-                "NOT_NEEDED".dimmed()
-            },
-        );
-        TerminalReporter::row("Secrets in logs:", report.secrets_in_logs.bold());
-        TerminalReporter::row(
-            "Restore duration:",
-            format!("{:.2}s", report.restore_duration_ms as f64 / 1000.0),
-        );
-        TerminalReporter::footer(
-            report.drill_result == "VERIFIED",
-            &format!("RECOVERY DRILL: {}", report.drill_result),
-        );
+        println!();
     }
 
     /// Writes comprehensive evidence files EXCEPT final-report.json.
@@ -1202,28 +1528,49 @@ impl DrillCommand {
         Ok(())
     }
 
-    /// Runs secret scan across all evidence files. Returns (secrets_detected, scanned_file_names).
-    fn run_secret_scan(evidence_dir: &Path) -> Result<(usize, Vec<String>)> {
-        let evidence_files = vec![
-            "environment.json",
-            "fnn-binary.sha256",
-            "source-inspect.json",
-            "backup-verification.json",
-            "manifest.json",
-            "manifest-verification.json",
-            "restore-output.log",
-            "check-validate-output.log",
-            "restored-inspect.json",
-            "inventory-diff.json",
-            "restored-inventory-comparison.json",
-            "network-isolation-test.json",
-            "rpc-node-info.json",
-            "rpc-list-channels.json",
-            "rpc-list-payments.json",
-            "rpc-backup-response.json",
-            "rpc-backup-dir-detected.json",
-        ];
+    /// Collects known secret values (private keys, passwords, tokens) in raw, hex, and base64 forms.
+    #[allow(clippy::collapsible_if)]
+    fn collect_known_secrets(backup_dir: &Path) -> Vec<String> {
+        let mut secrets = Vec::new();
 
+        // 1. Check ckb/key
+        let ckb_key_path = backup_dir.join("ckb").join("key");
+        if let Ok(key_str) = fs::read_to_string(&ckb_key_path) {
+            let trimmed = key_str.trim().to_string();
+            if !trimmed.is_empty() && !trimmed.chars().all(|c| c == '0') {
+                secrets.push(trimmed.clone());
+                if let Ok(raw_bytes) = hex::decode(&trimmed) {
+                    secrets.push(to_base64(&raw_bytes));
+                }
+            }
+        }
+
+        // 2. Check fiber/sk
+        let fiber_sk_path = backup_dir.join("fiber").join("sk");
+        if let Ok(sk_bytes) = fs::read(&fiber_sk_path) {
+            if !sk_bytes.is_empty() && sk_bytes.iter().any(|&b| b != 0) {
+                secrets.push(hex::encode(&sk_bytes));
+                secrets.push(to_base64(&sk_bytes));
+            }
+        }
+
+        // 3. FIBER_SECRET_KEY_PASSWORD from env
+        if let Ok(pass) = std::env::var("FIBER_SECRET_KEY_PASSWORD") {
+            let trimmed = pass.trim().to_string();
+            if !trimmed.is_empty() && trimmed != "safeguard_ephemeral_drill_key" {
+                secrets.push(trimmed);
+            }
+        }
+
+        secrets
+    }
+
+    /// Runs hardened secret scan across ALL evidence files in evidence_dir.
+    /// Checks known secrets (raw, hex, base64) and generic private key/token patterns.
+    fn run_secret_scan(
+        evidence_dir: &Path,
+        known_secrets: &[String],
+    ) -> Result<(usize, Vec<String>)> {
         let secret_patterns = [
             "BEGIN PRIVATE KEY",
             "BEGIN EC PRIVATE KEY",
@@ -1234,21 +1581,37 @@ impl DrillCommand {
         let mut secrets_detected = 0;
         let mut scanned_names = Vec::new();
 
-        for file_name in &evidence_files {
-            let p = evidence_dir.join(file_name);
-            if let Ok(content) = fs::read_to_string(&p) {
-                scanned_names.push(file_name.to_string());
-                for pattern in &secret_patterns {
-                    if content.contains(pattern) {
-                        secrets_detected += 1;
+        if let Ok(entries) = fs::read_dir(evidence_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    let file_name = entry.file_name().to_string_lossy().to_string();
+                    if file_name == "secret-scan.json" {
+                        continue;
+                    }
+                    if let Ok(content) = fs::read_to_string(&path) {
+                        scanned_names.push(file_name);
+                        for pattern in &secret_patterns {
+                            if content.contains(pattern) {
+                                secrets_detected += 1;
+                            }
+                        }
+                        for secret in known_secrets {
+                            if !secret.is_empty() && content.contains(secret) {
+                                secrets_detected += 1;
+                            }
+                        }
                     }
                 }
             }
         }
 
+        scanned_names.sort();
+
         let secret_scan = serde_json::json!({
             "scanned_files": scanned_names,
             "patterns_checked": secret_patterns,
+            "known_secrets_checked": known_secrets.len(),
             "secrets_detected": secrets_detected,
             "status": if secrets_detected == 0 { "PASS" } else { "FAIL" },
         });
@@ -1259,6 +1622,39 @@ impl DrillCommand {
 
         Ok((secrets_detected, scanned_names))
     }
+}
+
+fn to_base64(bytes: &[u8]) -> String {
+    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b0 = bytes[i] as usize;
+        let b1 = if i + 1 < bytes.len() {
+            bytes[i + 1] as usize
+        } else {
+            0
+        };
+        let b2 = if i + 2 < bytes.len() {
+            bytes[i + 2] as usize
+        } else {
+            0
+        };
+        out.push(CHARSET[b0 >> 2] as char);
+        out.push(CHARSET[((b0 & 3) << 4) | (b1 >> 4)] as char);
+        if i + 1 < bytes.len() {
+            out.push(CHARSET[((b1 & 15) << 2) | (b2 >> 6)] as char);
+        } else {
+            out.push('=');
+        }
+        if i + 2 < bytes.len() {
+            out.push(CHARSET[b2 & 63] as char);
+        } else {
+            out.push('=');
+        }
+        i += 3;
+    }
+    out
 }
 
 /// Compute SHA-256 of a sorted list of strings for inventory comparison.

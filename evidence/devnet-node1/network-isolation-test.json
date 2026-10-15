@@ -5,6 +5,7 @@
   "isolation_level": "LOOPBACK_BINDING",
   "isolation_method": "process",
   "listening_addr": "/ip4/127.0.0.1/tcp/0",
+  "network_isolation": "NOT_PROVEN",
   "network_mode": "loopback_zero_peers",
   "p2p_egress_policy": "ISOLATION_NOT_PROVEN"
 }

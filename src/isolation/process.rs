@@ -14,6 +14,14 @@ pub struct DrillExecutionReport {
     pub fnn_binary_path: String,
     pub restore_executed: bool,
     pub restore_success: bool,
+    pub native_restore_attempted: bool,
+    pub native_restore_exit_code: Option<i32>,
+    pub native_restore_status: String,
+    pub native_restore_stdout: String,
+    pub native_restore_stderr: String,
+    pub fallback_recovery_attempted: bool,
+    pub fallback_recovery_status: String,
+    pub fallback_recovery_method: Option<String>,
     pub check_validate_executed: bool,
     pub check_validate_passed: bool,
     pub database_opened: bool,
@@ -139,13 +147,21 @@ impl ProcessIsolationSandbox {
             fnn_binary_found: true,
             fnn_binary_path: bin.display().to_string(),
             restore_executed: true,
-            restore_success: bin_exec.restore_success,
+            restore_success: bin_exec.native_restore_success,
+            native_restore_attempted: bin_exec.native_restore_attempted,
+            native_restore_exit_code: bin_exec.native_restore_exit_code,
+            native_restore_status: bin_exec.native_restore_status,
+            native_restore_stdout: bin_exec.native_restore_stdout.clone(),
+            native_restore_stderr: bin_exec.native_restore_stderr.clone(),
+            fallback_recovery_attempted: bin_exec.fallback_recovery_attempted,
+            fallback_recovery_status: bin_exec.fallback_recovery_status,
+            fallback_recovery_method: bin_exec.fallback_recovery_method,
             check_validate_executed: true,
             check_validate_passed: bin_exec.validate_passed,
             database_opened,
             restored_pubkey,
             identity_match,
-            p2p_egress_blocked: true,
+            p2p_egress_blocked: false, // Process mode loopback binding does NOT prove OS-level egress isolation
             permission_workaround_applied: true,
             restore_stdout: bin_exec.restore_stdout,
             restore_stderr: bin_exec.restore_stderr,
@@ -232,37 +248,39 @@ impl ProcessIsolationSandbox {
             .with_context(|| format!("Failed to execute restore using {:?}", bin))?;
 
         let restore_stdout = String::from_utf8_lossy(&restore_output.stdout).to_string();
-        let mut restore_stderr = String::from_utf8_lossy(&restore_output.stderr).to_string();
-        let mut restore_success = restore_output.status.success();
+        let restore_stderr = String::from_utf8_lossy(&restore_output.stderr).to_string();
+        let native_restore_success = restore_output.status.success();
+        let native_restore_exit_code = restore_output.status.code();
+        let native_restore_status = if native_restore_success {
+            "PASS".to_string()
+        } else {
+            "FAIL".to_string()
+        };
 
-        // Workaround for upstream FNN v0.9.0 bug:
-        // FNN's internal restore() opens an empty DB before restore, causing RocksDB's drop cleanup
-        // to purge newly-copied .sst files. If .sst files were purged or restore failed due to this,
-        // we copy the checkpoint files directly from backup_dir to ensure database completeness.
+        let mut fallback_recovery_attempted = false;
+        let mut fallback_recovery_status = "NOT_ATTEMPTED".to_string();
+        let mut fallback_recovery_method = None;
+
         let store_dir = restore_dest.join("fiber").join("store");
         let backup_db_dir = backup_dir.join("db");
-        if backup_db_dir.exists() {
-            Self::copy_dir_contents(&backup_db_dir, &store_dir)?;
-            let _ = fs::copy(backup_dir.join("sk"), restore_dest.join("fiber").join("sk"));
-            let _ = fs::copy(backup_dir.join("key"), restore_dest.join("ckb").join("key"));
-            if !restore_success
-                && (restore_stderr.contains("Corruption: Corruption: IO error")
-                    || restore_stderr.contains(".sst: No such file or directory"))
-            {
-                restore_success = true;
-                restore_stderr = format!(
-                    "{restore_stderr}\n[SAFEGUARD WORKAROUND APPLIED: Upstream FNN .sst drop-purge bug mitigated by restoring SSTables from checkpoint]"
+
+        // If native restore failed or missing SSTables, perform Safeguard checkpoint recovery fallback
+        if !native_restore_success || !store_dir.exists() {
+            if backup_db_dir.exists() {
+                fallback_recovery_attempted = true;
+                Self::copy_dir_contents(&backup_db_dir, &store_dir)?;
+                let _ = fs::copy(backup_dir.join("sk"), restore_dest.join("fiber").join("sk"));
+                let _ = fs::copy(backup_dir.join("key"), restore_dest.join("ckb").join("key"));
+                fallback_recovery_status = "PASS".to_string();
+                fallback_recovery_method = Some("direct_checkpoint_copy".to_string());
+            } else {
+                bail!(
+                    "Native FNN restore failed with code {:?} and no valid backup database checkpoint exists for fallback: stdout: {}, stderr: {}",
+                    native_restore_exit_code,
+                    restore_stdout,
+                    restore_stderr
                 );
             }
-        }
-
-        if !restore_success {
-            bail!(
-                "FNN restore process failed with code {:?}: stdout: {}, stderr: {}",
-                restore_output.status.code(),
-                restore_stdout,
-                restore_stderr
-            );
         }
 
         // 2. Run fnn -d <restore_dest> -c <config_path> --check-validate
@@ -292,7 +310,15 @@ impl ProcessIsolationSandbox {
         }
 
         Ok(FnnCommandOutputs {
-            restore_success,
+            native_restore_success,
+            native_restore_attempted: true,
+            native_restore_exit_code,
+            native_restore_status,
+            native_restore_stdout: restore_stdout.clone(),
+            native_restore_stderr: restore_stderr.clone(),
+            fallback_recovery_attempted,
+            fallback_recovery_status,
+            fallback_recovery_method,
             validate_passed,
             restore_stdout,
             restore_stderr,
@@ -334,7 +360,15 @@ impl ProcessIsolationSandbox {
 }
 
 struct FnnCommandOutputs {
-    pub restore_success: bool,
+    pub native_restore_success: bool,
+    pub native_restore_attempted: bool,
+    pub native_restore_exit_code: Option<i32>,
+    pub native_restore_status: String,
+    pub native_restore_stdout: String,
+    pub native_restore_stderr: String,
+    pub fallback_recovery_attempted: bool,
+    pub fallback_recovery_status: String,
+    pub fallback_recovery_method: Option<String>,
     pub validate_passed: bool,
     pub restore_stdout: String,
     pub restore_stderr: String,

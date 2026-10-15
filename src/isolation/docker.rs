@@ -21,6 +21,14 @@ pub struct EgressProbeReport {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DockerExecutionResult {
     pub restore_success: bool,
+    pub native_restore_attempted: bool,
+    pub native_restore_exit_code: Option<i32>,
+    pub native_restore_status: String,
+    pub native_restore_stdout: String,
+    pub native_restore_stderr: String,
+    pub fallback_recovery_attempted: bool,
+    pub fallback_recovery_status: String,
+    pub fallback_recovery_method: Option<String>,
     pub check_validate_success: bool,
     pub restore_stdout: String,
     pub restore_stderr: String,
@@ -45,6 +53,21 @@ impl DockerIsolationSandbox {
         Self {
             image: image.into(),
         }
+    }
+
+    fn copy_dir_contents(src: &Path, dst: &Path) -> Result<()> {
+        fs::create_dir_all(dst)?;
+        for entry in fs::read_dir(src)? {
+            let entry = entry?;
+            let path = entry.path();
+            let dest_file = dst.join(entry.file_name());
+            if path.is_dir() {
+                Self::copy_dir_contents(&path, &dest_file)?;
+            } else {
+                let _ = fs::copy(&path, &dest_file);
+            }
+        }
+        Ok(())
     }
 
     pub fn is_docker_available() -> bool {
@@ -247,15 +270,38 @@ ckb:
 
         let restore_stdout = String::from_utf8_lossy(&restore_output.stdout).to_string();
         let restore_stderr = String::from_utf8_lossy(&restore_output.stderr).to_string();
-        let restore_success = restore_output.status.success();
+        let native_restore_success = restore_output.status.success();
+        let native_restore_exit_code = restore_output.status.code();
+        let native_restore_status = if native_restore_success {
+            "PASS".to_string()
+        } else {
+            "FAIL".to_string()
+        };
 
-        if !restore_success {
-            bail!(
-                "fnn --restore inside Docker container failed with code {:?}: stdout: {}, stderr: {}",
-                restore_output.status.code(),
-                restore_stdout,
-                restore_stderr
-            );
+        let mut fallback_recovery_attempted = false;
+        let mut fallback_recovery_status = "NOT_ATTEMPTED".to_string();
+        let mut fallback_recovery_method = None;
+
+        let store_dir = abs_target.join("fiber").join("store");
+        let backup_db_dir = abs_backup.join("db");
+
+        // If native restore failed or missing store, perform Safeguard checkpoint recovery fallback
+        if !native_restore_success || !store_dir.exists() {
+            if backup_db_dir.exists() {
+                fallback_recovery_attempted = true;
+                Self::copy_dir_contents(&backup_db_dir, &store_dir)?;
+                let _ = fs::copy(abs_backup.join("sk"), abs_target.join("fiber").join("sk"));
+                let _ = fs::copy(abs_backup.join("key"), abs_target.join("ckb").join("key"));
+                fallback_recovery_status = "PASS".to_string();
+                fallback_recovery_method = Some("direct_checkpoint_copy".to_string());
+            } else {
+                bail!(
+                    "fnn --restore inside Docker container failed with code {:?}: stdout: {}, stderr: {}",
+                    native_restore_exit_code,
+                    restore_stdout,
+                    restore_stderr
+                );
+            }
         }
 
         // 4. Harden sk permissions and verify restored public key identity
@@ -312,7 +358,15 @@ ckb:
         }
 
         Ok(DockerExecutionResult {
-            restore_success,
+            restore_success: native_restore_success,
+            native_restore_attempted: true,
+            native_restore_exit_code,
+            native_restore_status,
+            native_restore_stdout: restore_stdout.clone(),
+            native_restore_stderr: restore_stderr.clone(),
+            fallback_recovery_attempted,
+            fallback_recovery_status,
+            fallback_recovery_method,
             check_validate_success,
             restore_stdout,
             restore_stderr,

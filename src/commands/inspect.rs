@@ -81,11 +81,7 @@ impl InspectCommand {
             node_public_key: node_info.pubkey.clone(),
             fnn_version: node_info.version.clone(),
             fnn_commit: node_info.commit_hash.clone(),
-            network: if node_info.chain_hash.starts_with("0x92b1") {
-                "mainnet".to_string()
-            } else {
-                "testnet".to_string()
-            },
+            network: crate::rpc::types::classify_network(&node_info.chain_hash).to_string(),
             ready_channels: channel_counts.ready,
             stale_channels: channel_counts.stale,
             total_channels: channel_counts.total,

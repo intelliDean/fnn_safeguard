@@ -2,12 +2,26 @@
   "backup_dir": "/home/dean/.gemini/antigravity-ide/brain/0ed7f8b2-f876-46e3-8a6b-955db604ae28/scratch/fiber/tests/nodes/2/fiber/backups/1789430653562",
   "backup_completeness": "PASS",
   "manifest_verified": "PASS",
+  "native_restore": {
+    "attempted": true,
+    "status": "FAIL",
+    "exit_code": 1
+  },
+  "fallback_recovery": {
+    "attempted": true,
+    "status": "PASS",
+    "method": "direct_checkpoint_copy"
+  },
   "database_restore": "PASS",
+  "database_validation": "PASS",
   "node_identity_comparison": "MATCH",
+  "identity_equivalence": "PASS",
   "expected_pubkey": "02bcbd0e0d811d13363af1e5998f56e74e6aab8a7aa44005e1ce7d696a4d3f10f6",
   "restored_pubkey": "02bcbd0e0d811d13363af1e5998f56e74e6aab8a7aa44005e1ce7d696a4d3f10f6",
   "channel_inventory": "MATCH (source: 7, restored: 7)",
+  "channel_state_equivalence": "PASS",
   "payment_inventory": "MATCH (source: 5, restored: 5)",
+  "payment_state_equivalence": "PASS",
   "inventory_comparison": {
     "comparison_method": "LIVE_RESTORED_NODE_RPC_QUERY",
     "source_channel_count": 7,
@@ -26,11 +40,30 @@
     "fully_verified": true,
     "note": "Live restored node successfully started and queried via JSON-RPC. Channel count match: true (source: Some(7), restored: Some(7)). Payment count match: true (source: Some(5), restored: Some(5)). Channel ID digest match: Some(true). Payment hash digest match: Some(true). Identity match: true."
   },
-  "fiber_p2p_egress": "ISOLATION_NOT_PROVEN (Process mode: loopback-only policy)",
+  "source_state_immutable": "PASS",
+  "network_isolation": "NOT_PROVEN",
+  "fiber_p2p_egress": "NOT_PROVEN (Process mode: loopback-only binding, no OS sandbox)",
   "docker_image_digest": "N/A (process mode)",
   "fnn_version_in_container": "bin/fnn",
   "secrets_in_logs": "NONE DETECTED",
   "restore_duration_ms": 123,
   "permission_workaround_applied": true,
-  "drill_result": "VERIFIED"
+  "safety_invariants": {
+    "source_state_immutable": "PASS",
+    "backup_structure_valid": "PASS",
+    "manifest_integrity": "PASS",
+    "native_restore": "FAIL",
+    "fallback_recovery": "PASS",
+    "database_valid": "PASS",
+    "identity_equivalence": "PASS",
+    "channel_state_equivalence": "PASS",
+    "payment_state_equivalence": "PASS",
+    "network_isolation": "NOT_PROVEN",
+    "secret_leakage": "PASS",
+    "final_verdict": "VERIFIED_WITH_FALLBACK",
+    "verdict_reason": "Observed native restore failure; verified via Safeguard checkpoint recovery; network isolation not proven (process mode)"
+  },
+  "verdict": "VERIFIED_WITH_FALLBACK",
+  "verdict_reason": "Observed native restore failure; verified via Safeguard checkpoint recovery; network isolation not proven (process mode)",
+  "drill_result": "VERIFIED_WITH_FALLBACK"
 }

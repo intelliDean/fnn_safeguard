@@ -4,95 +4,83 @@
 [![Fiber Compatibility](https://img.shields.io/badge/Fiber%20Node-v0.9.0%2B-emerald.svg)](https://github.com/nervosnetwork/fiber)
 [![CI Status](https://github.com/intelliDean/fnn_safeguard/actions/workflows/ci.yml/badge.svg)](https://github.com/intelliDean/fnn_safeguard/actions/workflows/ci.yml)
 
-> **Verified Recovery Points, Isolated Disaster Drills, and Pre-Upgrade Qualification for Nervos Fiber Network Nodes (FNN).**
+> **Verified Recovery Points, Isolated Disaster Drills, and Machine-Enforced Safety Invariants for Nervos Fiber Network Nodes (FNN).**
 
-FNN Safeguard is a self-hosted operator tool designed to verify backups and test disaster recovery procedures for Fiber Network Nodes on Nervos CKB. It independently validates backup completeness, generates Checksummed Recovery Manifests, verifies identity key derivation, and executes end-to-end restore drills against the official `fnn` binary in an isolated sandbox with blocked P2P egress verified via active network probes.
+FNN Safeguard is a self-hosted operator safety tool designed to verify backups and test disaster recovery procedures for Fiber Network Nodes on Nervos CKB. It independently validates backup completeness, generates Checksummed Recovery Manifests, verifies identity key derivation, enforces strict safety invariants (I1–I8), and executes isolated restore drills against the official `fnn` binary with deterministic, fail-closed verdicts.
+
+---
+
+## Observed FNN v0.9.0 Recovery Findings
+
+During isolated disaster recovery drills against official Fiber Network Node release binaries (`fnn v0.9.0`), Safeguard surfaced two concrete restore-path behaviors:
+
+1. **Read-Only Secret Key Permissions (`0o400` EACCES)**:
+   FNN v0.9.0 writes the node secret key (`sk`) with read-only permissions (`0o400`). When restoring into a pre-existing target directory, standard file copy operations fail with `PermissionDenied` (EACCES) unless permissions are adjusted. Safeguard includes an automated `PermissionManager` to apply the required permissions prior to recovery and hardens the restored key back to `0o400`.
+2. **Observed Native Restore-Path Failure (Missing SSTables)**:
+   In tested scenarios, executing the native `fnn --restore` command failed with RocksDB IO errors:
+   ```text
+   IO error: .../000003.sst: No such file or directory
+   ```
+   The native command expects an initialized destination with all SSTable references populated.
+   - **Safeguard Truthfulness Guarantee**: Safeguard **never** masks or rewrites a failed native restore attempt as success. The failure is recorded truthfully:
+     ```text
+     Native FNN Restore:    FAIL (observed FNN v0.9.0 restore-path failure)
+     Fallback Recovery:     PASS [direct_checkpoint_copy]
+     Verdict:               VERIFIED_WITH_FALLBACK
+     ```
+   - **Direct Evidence**: See the raw captured logs and reports from both independent nodes:
+     - **Node 1**: [`restore-output.log`](evidence/devnet-node1/restore-output.log), [`final-report.json`](evidence/devnet-node1/final-report.json), [`safety-invariants.json`](evidence/devnet-node1/safety-invariants.json)
+     - **Node 2**: [`restore-output.log`](evidence/devnet-node2/restore-output.log), [`final-report.json`](evidence/devnet-node2/final-report.json), [`safety-invariants.json`](evidence/devnet-node2/safety-invariants.json)
+   - **Upstream Fiber Issue Draft**: See [`docs/UPSTREAM_ISSUE_DRAFT.md`](docs/UPSTREAM_ISSUE_DRAFT.md) for a complete, reproducible issue report prepared for upstream maintainers.
+
+---
+
+## Machine-Enforced Safety Invariants (I1 – I8)
+
+Safeguard evaluates deterministic recovery safety against a formal safety specification documented in [`docs/SAFETY_MODEL.md`](docs/SAFETY_MODEL.md):
+
+| Invariant | Name | Rule & Verification Method |
+| :--- | :--- | :--- |
+| **I1** | **Source Immutability** | Source/backup directory SHA-256 fingerprint verified pre/post drill. Source is never mutated. |
+| **I2** | **Identity Equivalence** | Restored node public key must strictly match the source node identity (`restored_pubkey == source_pubkey`). |
+| **I3** | **Channel-State Equivalence** | Channel count, Channel-ID SHA-256 digest, and channel state distribution must match. |
+| **I4** | **Payment-State Equivalence** | Payment count, Payment-hash SHA-256 digest, and payment status distribution must match. |
+| **I5** | **Database Validity** | Restored RocksDB must pass `fnn --check-validate` (`db validate success`) and open cleanly. |
+| **I6** | **Recovery Isolation** | In Docker mode, egress probe (`bash -c 'exec 3<>/dev/tcp/8.8.8.8/80'`) must fail. Process mode explicitly reports `NOT_PROVEN`. |
+| **I7** | **Restore Truthfulness** | Native restore outcome recorded truthfully; fallback checkpoint recovery recorded separately with exact method. |
+| **I8** | **Upgrade Fail-Closed Gate** | Qualification decision model for version upgrades: `BLOCK`, `WARN`, or `PASS`. |
+
+### Deterministic Verdict Taxonomy
+
+Every drill produces a machine-readable verdict in `safety-invariants.json` and `final-report.json`:
+- `STRUCTURAL_CHECK_PASSED`: Backup files present, keys non-empty, database non-empty. No restore executed.
+- `RESTORE_VALIDATED`: Restore executed and passed `fnn --check-validate`, but live daemon inventory was unqueried.
+- `RESTORE_AND_STATE_VERIFIED`: Native restore succeeded, all state invariants match, but network isolation not proven (process mode).
+- `VERIFIED_WITH_FALLBACK`: Native restore failed (recorded truthfully as `FAIL`), Safeguard fallback checkpoint recovery succeeded, all state invariants match, network isolation not proven (process mode).
+- `ISOLATED_RECOVERY_POINT_VERIFIED`: Native restore succeeded, all state invariants match, and container network isolation is proven.
+- `ISOLATED_RECOVERY_POINT_VERIFIED_WITH_FALLBACK`: Native restore failed (recorded truthfully), fallback recovery succeeded, all state invariants match, and container network isolation is proven.
+- `FAILED`: Any invariant (I1–I7), manifest verification, database check, secret scanner, or egress probe failed.
 
 ---
 
 ## Table of Contents
 
+- [Observed FNN v0.9.0 Recovery Findings](#observed-fnn-v090-recovery-findings)
+- [Machine-Enforced Safety Invariants (I1 – I8)](#machine-enforced-safety-invariants-i1--i8)
 - [The Problem: Fiber Recovery Hazards](#the-problem-fiber-recovery-hazards)
 - [The Solution: Verifiable Operational Safeguards](#the-solution-verifiable-operational-safeguards)
-- [Core Safety Guardrails](#core-safety-guardrails)
 - [Architecture & Code Structure](#architecture--code-structure)
 - [Quickstart](#quickstart)
 - [CLI Command Reference](#cli-command-reference)
   - [1. Node Inspection (`inspect`)](#1-node-inspection-inspect)
   - [2. Verified Backup & Manifest Generation (`backup`)](#2-verified-backup--manifest-generation-backup)
   - [3. Sandboxed Disaster Recovery Drill (`drill`)](#3-sandboxed-disaster-recovery-drill-drill)
-- [Verified Grant Evidence Suites](#verified-grant-evidence-suites)
-  - [1. Primary Live Testnet Run (`evidence/live-fnn-v0.9.0-testnet`)](#1-primary-live-testnet-run-evidencelive-fnn-v090-testnet)
-  - [2. Second Live Testnet Run (`evidence/live-fnn-v0.9.0-testnet-node2`)](#2-second-live-testnet-run-evidencelive-fnn-v090-testnet-node2)
+- [Local Fiber Devnet Evidence Suites](#local-fiber-devnet-evidence-suites)
+  - [1. Local Fiber Devnet Evidence — Node 1 (`evidence/devnet-node1`)](#1-local-fiber-devnet-evidence--node-1-evidencedevnet-node1)
+  - [2. Local Fiber Devnet Evidence — Node 2 (`evidence/devnet-node2`)](#2-local-fiber-devnet-evidence--node-2-evidencedevnet-node2)
   - [3. Sample Fixture Reference (`evidence/sample-fixture`)](#3-sample-fixture-reference-evidencesample-fixture)
-- [Checksummed Recovery Manifest Specification](#checksummed-recovery-manifest-specification)
 - [Testing & Quality Assurance](#testing--quality-assurance)
-- [Grant Roadmap & Future Milestones](#grant-roadmap--future-milestones)
 - [License](#license)
-
----
-
-## The Problem: Fiber Recovery Hazards
-
-Fiber Network Nodes (v0.9.0+) support native online checkpointing via admin RPC. However, running a production Fiber node (routing nodes, merchant gateways, and Cross-Chain Hub [CCH] services) exposes operators to operational hazards:
-
-1. **The Double-Signing & State Penalty Hazard**:
-   In payment channel networks, broadcasting an outdated channel commitment transaction on-chain allows the remote peer to immediately trigger a **penalty dispute transaction** on CKB, permanently confiscating the operator's locked channel collateral. Restoring a backup on a live node without auditing channel state carries severe financial risk.
-2. **The Read-Only Key Permission Restore Bug (`0o400` EACCES)**:
-   FNN v0.9.0 writes the secret key (`sk`) with `0o400` permissions. During restoration over an existing node directory, `std::fs::copy` fails with `PermissionDenied` (EACCES) before database or channel-recovery routines can execute.
-3. **Unverified Backup Completeness**:
-   A backup directory may exist on disk without proving that:
-   - The RocksDB storage is intact and readable.
-   - Both the Fiber identity key (`sk`) and CKB keystore (`key`) are present and uncorrupted.
-   - The public key matches the expected node identity.
-4. **Secret Leakage in Artifacts**:
-   Backups and configs frequently contain sensitive credentials (`rpc.auth_token`, `FIBER_SECRET_KEY_PASSWORD`, or raw key bytes) that must never leak into operational manifests, audit logs, or shared reports.
-
----
-
-## The Solution: Verifiable Operational Safeguards
-
-FNN Safeguard wraps FNN's existing backup capabilities into an automated, verifiable pipeline:
-
-```
-+-----------------------------------------------------------------------------------+
-|                              FNN SAFEGUARD WORKFLOW                               |
-+-----------------------------------------------------------------------------------+
-   [ Live Node ]
-         |
-         v
-   1. INSPECT       --> Collect non-secret inventory (channels, payments, config hash)
-         |
-         v
-   2. BACKUP        --> Checkpoint RocksDB, verify secp256k1 key, hash files
-         |
-         v
-   3. MANIFEST      --> Produce deterministic Checksummed Recovery Manifest (0 secrets)
-         |
-         v
-   4. DRILL         --> Spin up isolated sandbox with P2P EGRESS BLOCKED
-         |              Resolve 0o400 key permissions, run real fnn --restore & --check-validate
-         v
-   5. EVIDENCE      --> Emit 18 machine-readable audit evidence files
-```
-
----
-
-## Core Safety Guardrails
-
-- **No Automated Live Rollbacks**: Safeguard never automatically rolls back a live production database. All recovery validations occur in temporary, ephemeral sandboxes.
-- **Evidence-Grade Docker Isolation with Verified Egress Probe**: When `--docker` is passed, drills run inside a Docker container with `--network none`. An active outbound network probe (`bash -c 'exec 3<>/dev/tcp/8.8.8.8/80'`) is executed and proven to fail (`Network is unreachable`, exit code 1) before database restoration proceeds.
-- **Checksummed Recovery Manifests & Secret Sanitization**: Node configuration files (`config.yml`) are parsed line-by-line; sensitive credentials, passwords, and Biscuit tokens are masked with `[REDACTED]` prior to SHA-256 hashing.
-- **Automatic Permission Manager & Upstream Workaround**: Resolves the Fiber v0.9.0 read-only file mode issue (`0o400` EACCES) and mitigates upstream FNN RocksDB SSTable drop-purge during checkpoint restore.
-- **Strict 8-Point Fail-Closed Verification Gating**: Safeguard never reports `VERIFIED` without passing all 8 checkpoints:
-  1. Complete backup structure (database, keys, non-empty files).
-  2. Matching Checksummed Recovery Manifest (`PASS`).
-  3. Official `fnn --restore` exiting with code 0.
-  4. Official `fnn --check-validate` confirming database validity (`db validate success`).
-  5. Exact public key match between source node and restored identity.
-  6. **Restored Inventory Verified**: Restored node ephemeral daemon is booted and queried via JSON-RPC to verify channel counts, payment counts, channel-ID digest, and payment-hash digest match the source manifest.
-  7. Proven network isolation (failed outbound egress probe in Docker mode, loopback-only policy in process mode).
-  8. Pinned binary/image digest verified and automated secret scan reporting **0 detected secrets** across all 17 precursor evidence files before the final report is generated.
 
 ---
 
@@ -177,7 +165,7 @@ Executes an end-to-end recovery test inside an isolated environment with network
 fnn-safeguard drill \
   --docker \
   --backup /path/to/backup \
-  --evidence-dir evidence/live-fnn-v0.9.0-testnet
+  --evidence-dir evidence/devnet-node1
 
 # Native process sandbox drill
 fnn-safeguard drill \
@@ -187,37 +175,40 @@ fnn-safeguard drill \
 
 ---
 
-## Verified Grant Evidence Suites
+## Local Fiber Devnet Evidence Suites
 
-The repository contains three complete, machine-readable evidence suites:
+The repository contains three complete, machine-readable evidence suites captured from authentic node environments:
 
-### 1. Primary Live Testnet Run (`evidence/live-fnn-v0.9.0-testnet`)
-Generated against an authentic live testnet node (`fiber-1`, pubkey `02a64b8993f33b2ebd37a4de1c9441f491291a4e779da8e519bcfb7c1f3f56c9c0`) with **7 ChannelReady channels** and **6 completed payments**, restored in an isolated sandbox with live daemon JSON-RPC inventory reconciliation.
+> **Network Classification Note**: The live evidence runs were conducted on an authentic multi-node local Fiber devnet configured with a custom consensus spec (`dev.toml`). In strict adherence to Safeguard's network classification rules, nodes with non-standard genesis hashes are classified as `devnet/custom` rather than public testnet.
+
+### 1. Local Fiber Devnet Evidence — Node 1 (`evidence/devnet-node1`)
+Captured from an authentic running devnet node (`fiber-1`, pubkey `02a64b8993f33b2ebd37a4de1c9441f491291a4e779da8e519bcfb7c1f3f56c9c0`) with **7 ChannelReady channels** and **6 completed payments**, restored in an isolated sandbox with live daemon JSON-RPC inventory reconciliation:
 
 | Evidence File | Description |
 | :--- | :--- |
-| [`environment.json`](evidence/live-fnn-v0.9.0-testnet/environment.json) | Host OS, kernel, clean official FNN v0.9.0 binary digest, archive digest, and Docker runtime. |
-| [`fnn-binary.sha256`](evidence/live-fnn-v0.9.0-testnet/fnn-binary.sha256) | SHA-256 checksum matching official release binary (`9c71faea...`). |
-| [`source-inspect.json`](evidence/live-fnn-v0.9.0-testnet/source-inspect.json) | Live source node state with authentic channel and payment counts. |
-| [`backup-verification.json`](evidence/live-fnn-v0.9.0-testnet/backup-verification.json) | Structural integrity check and key derivation results. |
-| [`manifest.json`](evidence/live-fnn-v0.9.0-testnet/manifest.json) | Deterministic Checksummed Recovery Manifest with live inventory counts and digests. |
-| [`manifest-verification.json`](evidence/live-fnn-v0.9.0-testnet/manifest-verification.json) | Independent verification recomputing all file hashes and bundle checksum. |
-| [`restore-output.log`](evidence/live-fnn-v0.9.0-testnet/restore-output.log) | Complete stdout/stderr logs from `fnn --restore`. |
-| [`check-validate-output.log`](evidence/live-fnn-v0.9.0-testnet/check-validate-output.log) | Logs from `fnn --check-validate` confirming database validity (`db validate success`). |
-| [`restored-inspect.json`](evidence/live-fnn-v0.9.0-testnet/restored-inspect.json) | Restored node state and identity verification. |
-| [`restored-inventory-comparison.json`](evidence/live-fnn-v0.9.0-testnet/restored-inventory-comparison.json) | Full 5-dimension inventory comparison (`channel_count_match`, `payment_count_match`, `channel_id_digest_match`, `payment_hash_digest_match`, `identity_match`). |
-| [`inventory-diff.json`](evidence/live-fnn-v0.9.0-testnet/inventory-diff.json) | Reconciled inventory diff matching source manifest to restored node. |
-| [`rpc-node-info.json`](evidence/live-fnn-v0.9.0-testnet/rpc-node-info.json) | Sanitized raw RPC capture of `node_info` on the live node. |
-| [`rpc-list-channels.json`](evidence/live-fnn-v0.9.0-testnet/rpc-list-channels.json) | Sanitized raw RPC capture of `list_channels` confirming active `ChannelReady` channels. |
-| [`rpc-list-payments.json`](evidence/live-fnn-v0.9.0-testnet/rpc-list-payments.json) | Sanitized raw RPC capture of `list_payments` confirming settled `Success` payments. |
-| [`rpc-backup-response.json`](evidence/live-fnn-v0.9.0-testnet/rpc-backup-response.json) | Raw admin RPC response confirming successful RocksDB checkpoint backup. |
-| [`rpc-backup-dir-detected.json`](evidence/live-fnn-v0.9.0-testnet/rpc-backup-dir-detected.json) | Verification of newly created timestamped backup directory. |
-| [`network-isolation-test.json`](evidence/live-fnn-v0.9.0-testnet/network-isolation-test.json) | Network isolation proof with loopback-only binding or container `--network none` egress probe. |
-| [`secret-scan.json`](evidence/live-fnn-v0.9.0-testnet/secret-scan.json) | Automated scan across all 17 precursor files confirming 0 secrets leaked. |
-| [`final-report.json`](evidence/live-fnn-v0.9.0-testnet/final-report.json) | Unified summary report with fail-closed `VERIFIED` status. |
+| [`safety-invariants.json`](evidence/devnet-node1/safety-invariants.json) | Machine-enforced invariant evaluations (I1–I7) and deterministic verdict (`VERIFIED_WITH_FALLBACK`). |
+| [`final-report.json`](evidence/devnet-node1/final-report.json) | Unified summary report recording native restore status, fallback recovery, and inventory comparison. |
+| [`environment.json`](evidence/devnet-node1/environment.json) | Host OS, kernel, clean official FNN v0.9.0 binary digest, archive digest, and Docker runtime. |
+| [`fnn-binary.sha256`](evidence/devnet-node1/fnn-binary.sha256) | SHA-256 checksum matching official release binary (`9c71faea...`). |
+| [`source-inspect.json`](evidence/devnet-node1/source-inspect.json) | Live source node state with authentic channel and payment counts. |
+| [`backup-verification.json`](evidence/devnet-node1/backup-verification.json) | Structural integrity check and key derivation results. |
+| [`manifest.json`](evidence/devnet-node1/manifest.json) | Deterministic Checksummed Recovery Manifest with live inventory counts and digests. |
+| [`manifest-verification.json`](evidence/devnet-node1/manifest-verification.json) | Independent verification recomputing all file hashes and bundle checksum. |
+| [`restore-output.log`](evidence/devnet-node1/restore-output.log) | Complete stdout/stderr logs from `fnn --restore` (capturing the observed missing-SSTable error). |
+| [`check-validate-output.log`](evidence/devnet-node1/check-validate-output.log) | Logs from `fnn --check-validate` confirming database validity (`db validate success`). |
+| [`restored-inspect.json`](evidence/devnet-node1/restored-inspect.json) | Restored node state and identity verification. |
+| [`restored-inventory-comparison.json`](evidence/devnet-node1/restored-inventory-comparison.json) | Full 5-dimension inventory comparison (`channel_count_match`, `payment_count_match`, `channel_id_digest_match`, `payment_hash_digest_match`, `identity_match`). |
+| [`inventory-diff.json`](evidence/devnet-node1/inventory-diff.json) | Reconciled inventory diff matching source manifest to restored node. |
+| [`rpc-node-info.json`](evidence/devnet-node1/rpc-node-info.json) | Sanitized raw RPC capture of `node_info` on the live node. |
+| [`rpc-list-channels.json`](evidence/devnet-node1/rpc-list-channels.json) | Sanitized raw RPC capture of `list_channels` confirming active `ChannelReady` channels. |
+| [`rpc-list-payments.json`](evidence/devnet-node1/rpc-list-payments.json) | Sanitized raw RPC capture of `list_payments` confirming settled `Success` payments. |
+| [`rpc-backup-response.json`](evidence/devnet-node1/rpc-backup-response.json) | Raw admin RPC response confirming successful RocksDB checkpoint backup. |
+| [`rpc-backup-dir-detected.json`](evidence/devnet-node1/rpc-backup-dir-detected.json) | Verification of newly created timestamped backup directory. |
+| [`network-isolation-test.json`](evidence/devnet-node1/network-isolation-test.json) | Network isolation proof documenting `NOT_PROVEN` in process mode. |
+| [`secret-scan.json`](evidence/devnet-node1/secret-scan.json) | Automated scan across all evidence files confirming 0 secrets leaked and checking known keys/passwords. |
 
-### 2. Second Live Testnet Run (`evidence/live-fnn-v0.9.0-testnet-node2`)
-Demonstrates repeatability across varied node state and distinct operator identity (`fiber-2`, pubkey `02bcbd0e0d811d13363af1e5998f56e74e6aab8a7aa44005e1ce7d696a4d3f10f6`) with **7 ChannelReady channels** and **5 completed payments** in [`evidence/live-fnn-v0.9.0-testnet-node2/`](evidence/live-fnn-v0.9.0-testnet-node2/). Checksums and keys are strictly non-identical to the primary run.
+### 2. Local Fiber Devnet Evidence — Node 2 (`evidence/devnet-node2`)
+Demonstrates repeatability across varied node state and distinct operator identity (`fiber-2`, pubkey `02bcbd0e0d811d13363af1e5998f56e74e6aab8a7aa44005e1ce7d696a4d3f10f6`) with **7 ChannelReady channels** and **5 completed payments** in [`evidence/devnet-node2/`](evidence/devnet-node2/). Checksums and keys are strictly non-identical to Node 1.
 
 ### 3. Sample Fixture Reference (`evidence/sample-fixture`)
 Reference evidence generated from static test fixtures in [`evidence/sample-fixture/`](evidence/sample-fixture/).
