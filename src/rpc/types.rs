@@ -380,17 +380,17 @@ pub struct ListPaymentsResult {
     pub last_cursor: Option<String>,
 }
 
-/// Deterministically classifies the network based on the CKB chain hash or name.
+/// Deterministically classifies the network based on the exact official Fiber chain hash or name.
+/// Only the exact official Fiber hashes/names are classified as mainnet or testnet.
+/// Any other hash or custom genesis is classified as "devnet/custom".
 pub fn classify_network(chain_hash_or_name: &str) -> &'static str {
-    let lower = chain_hash_or_name.to_lowercase();
-    if lower == "0x92b197aa1fba41650a6b63fa8f6d68725ac4f3545c98358182d6b2a04e3fa529"
+    let lower = chain_hash_or_name.trim().to_lowercase();
+    if lower == "0x92b197aa1fba0f63633922c61c92375c9c074a93e85963554f5499fe1450d0e5"
         || lower == "mainnet"
-        || lower.starts_with("0x92b1")
     {
         "mainnet"
-    } else if lower == "0x10636e234964790918b7415d02b577442646173ac49e942b0d24994c60835f18"
+    } else if lower == "0x10639e0895502b5688a6be8cf69460d76541bfa4821629d86d62ba0aae3f9606"
         || lower == "testnet"
-        || lower.starts_with("0x1063")
     {
         "testnet"
     } else {
@@ -442,5 +442,31 @@ mod tests {
         let json_stale = r#"{"state_name":"Stale"}"#;
         let state_stale: ChannelState = serde_json::from_str(json_stale).unwrap();
         assert_eq!(state_stale, ChannelState::Stale);
+    }
+
+    #[test]
+    fn test_classify_network_exact_matching() {
+        assert_eq!(
+            classify_network("0x92b197aa1fba0f63633922c61c92375c9c074a93e85963554f5499fe1450d0e5"),
+            "mainnet"
+        );
+        assert_eq!(classify_network("mainnet"), "mainnet");
+        assert_eq!(
+            classify_network("0x10639e0895502b5688a6be8cf69460d76541bfa4821629d86d62ba0aae3f9606"),
+            "testnet"
+        );
+        assert_eq!(classify_network("testnet"), "testnet");
+
+        // Prefix match alone must NOT match
+        assert_eq!(
+            classify_network("0x92b1000000000000000000000000000000000000000000000000000000000000"),
+            "devnet/custom"
+        );
+        assert_eq!(
+            classify_network("0x1063000000000000000000000000000000000000000000000000000000000000"),
+            "devnet/custom"
+        );
+        assert_eq!(classify_network("dev.toml"), "devnet/custom");
+        assert_eq!(classify_network("custom_chain"), "devnet/custom");
     }
 }

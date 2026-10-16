@@ -27,9 +27,23 @@
     "source_channel_count": 7,
     "restored_channel_count": 7,
     "channel_count_match": true,
+    "source_channel_state_distribution": {
+      "ChannelReady": 7
+    },
+    "restored_channel_state_distribution": {
+      "ChannelReady": 7
+    },
+    "channel_state_distribution_match": true,
     "source_payment_count": 6,
     "restored_payment_count": 6,
     "payment_count_match": true,
+    "source_payment_status_distribution": {
+      "Success": 6
+    },
+    "restored_payment_status_distribution": {
+      "Success": 6
+    },
+    "payment_status_distribution_match": true,
     "source_channel_id_digest": "bdafdece9cb8bae33e0e5fa467d66a61f5d8b7984d7084dba843d2adbd2c53b1",
     "restored_channel_id_digest": "bdafdece9cb8bae33e0e5fa467d66a61f5d8b7984d7084dba843d2adbd2c53b1",
     "channel_id_digest_match": true,
@@ -38,8 +52,9 @@
     "payment_hash_digest_match": true,
     "identity_match": true,
     "fully_verified": true,
-    "note": "Live restored node successfully started and queried via JSON-RPC. Channel count match: true (source: Some(7), restored: Some(7)). Payment count match: true (source: Some(6), restored: Some(6)). Channel ID digest match: Some(true). Payment hash digest match: Some(true). Identity match: true."
+    "note": "Live restored node successfully started and queried via JSON-RPC. Channel count match: true (source: Some(7), restored: Some(7)). Channel state distribution match: Some(true). Payment count match: true (source: Some(6), restored: Some(6)). Payment status distribution match: Some(true). Channel ID digest match: Some(true). Payment hash digest match: Some(true). Identity match: true."
   },
+  "recovery_point_immutable": "PASS",
   "source_state_immutable": "PASS",
   "network_isolation": "NOT_PROVEN",
   "fiber_p2p_egress": "NOT_PROVEN (Process mode: loopback-only binding, no OS sandbox)",
@@ -49,6 +64,7 @@
   "restore_duration_ms": 109,
   "permission_workaround_applied": true,
   "safety_invariants": {
+    "recovery_point_immutable": "PASS",
     "source_state_immutable": "PASS",
     "backup_structure_valid": "PASS",
     "manifest_integrity": "PASS",

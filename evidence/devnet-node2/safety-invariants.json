@@ -1,4 +1,5 @@
 {
+  "recovery_point_immutable": "PASS",
   "source_state_immutable": "PASS",
   "backup_structure_valid": "PASS",
   "manifest_integrity": "PASS",

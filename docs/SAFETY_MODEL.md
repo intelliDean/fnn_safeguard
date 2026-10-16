@@ -38,7 +38,7 @@ FNN Safeguard explicitly detects, isolates, and fails closed against the followi
 | **Native Restore Failure** | `fnn --restore` fails (e.g. read-only `0o400` permission or missing SSTables). | Real native exit code and stderr recorded as `FAIL`; fallback checkpoint recovery executed and reported separately. |
 | **Accidental Cloned-Node Network Access** | Cloned node connects to live Fiber peers, risking double-signing or penalties. | Docker `--network none` isolation enforced with active outbound egress probe; process mode defaults to `NOT_PROVEN`. |
 | **Leaked Secrets in Artifacts** | Private keys, tokens, or passwords appearing in evidence logs or manifests. | Multi-representation secret scanner checks raw, hex, base64, and config tokens across all precursor evidence files. |
-| **Live Node Directory Mutation** | A disaster recovery drill inadvertently writes to or alters the source node directory. | Source directory fingerprinted before and after drill; any mutation triggers invariant failure. |
+| **Recovery-Point Directory Mutation** | A disaster recovery drill inadvertently writes to or alters the backup directory. | Backup recovery-point directory fingerprinted before and after drill; any mutation triggers invariant failure. |
 | **Target-Version Migration Failure** | Future FNN version fails to open or migrate cloned database. | Target binary evaluated against cloned state; migration failure blocks upgrade. |
 
 ---
@@ -47,10 +47,10 @@ FNN Safeguard explicitly detects, isolates, and fails closed against the followi
 
 The core verification engine enforces eight machine-checkable invariants:
 
-### I1 — Source Immutability
-A recovery drill must never modify the live or source node directory.
-- **Specification**: $\text{Digest}(\text{SourceDirectory})_{\text{before}} == \text{Digest}(\text{SourceDirectory})_{\text{after}}$.
-- **Result**: `source_state_immutable = PASS | FAIL`. Any modification immediately fails the drill.
+### I1 — Recovery-Point Immutability
+A recovery drill must never modify the backup/recovery-point directory.
+- **Specification**: $\text{Digest}(\text{BackupDirectory})_{\text{before}} == \text{Digest}(\text{BackupDirectory})_{\text{after}}$.
+- **Result**: `recovery_point_immutable = PASS | FAIL` (also reported as `source_state_immutable = PASS | FAIL`). Any modification immediately fails the drill.
 
 ### I2 — Identity Equivalence
 The public key derived from the restored secret key must exactly match the source node public key.

@@ -7,7 +7,7 @@
 
 ### Description
 
-During automated disaster recovery validation across two independent local Fiber devnet nodes running official FNN v0.9.0, we observed a repeatable failure when executing `fnn --restore` on newly created backups generated via the native administrative backup RPC.
+During automated disaster recovery validation across two distinct local Fiber devnet nodes running official FNN v0.9.0, we observed a repeatable failure when executing `fnn --restore` on newly created backups generated via the native administrative backup RPC.
 
 We reproduced this failure twice under controlled, isolated conditions and are reporting our observations and reproduction logs for maintainer investigation.
 
@@ -59,21 +59,21 @@ Error: Corruption: Corruption: IO error: While open a file for random read: /tmp
 ```
 
 #### Detailed Observations:
-- In both independent node runs, the checkpoint files in `backup_dir/db` are complete and intact.
+- In both devnet node runs, the checkpoint files in `backup_dir/db` are complete and intact.
 - When the checkpoint files from `backup_dir/db` are copied directly into the target `fiber/store` directory without running the native restore routine, running `fnn --check-validate` passes cleanly with `db validate success`, and the daemon starts up normally with all channels and payments preserved.
 
 ---
 
-### Independent Reproductions & Evidence
+### Dual Devnet Reproductions & Evidence
 
-We captured full stdout/stderr and audit logs across two distinct node runs:
+We captured full stdout/stderr and audit logs across two distinct local devnet node runs:
 
 1. **Reproduction 1 (Node 1)**:
-   - Restore log: [`evidence/devnet-node1/restore-output.log`](../../evidence/devnet-node1/restore-output.log)
-   - Database validation log: [`evidence/devnet-node1/check-validate-output.log`](../../evidence/devnet-node1/check-validate-output.log)
+   - Restore log: [`evidence/devnet-node1/restore-output.log`](../evidence/devnet-node1/restore-output.log)
+   - Database validation log: [`evidence/devnet-node1/check-validate-output.log`](../evidence/devnet-node1/check-validate-output.log)
 2. **Reproduction 2 (Node 2)**:
-   - Restore log: [`evidence/devnet-node2/restore-output.log`](../../evidence/devnet-node2/restore-output.log)
-   - Database validation log: [`evidence/devnet-node2/check-validate-output.log`](../../evidence/devnet-node2/check-validate-output.log)
+   - Restore log: [`evidence/devnet-node2/restore-output.log`](../evidence/devnet-node2/restore-output.log)
+   - Database validation log: [`evidence/devnet-node2/check-validate-output.log`](../evidence/devnet-node2/check-validate-output.log)
 
 ---
 

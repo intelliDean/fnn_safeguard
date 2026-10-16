@@ -8,7 +8,7 @@
   "database_type": "rocksdb",
   "fnn_commit": "e6cb7ac 2026-08-06",
   "fnn_version": "0.9.0",
-  "network": "testnet",
+  "network": "devnet/custom",
   "node_public_key": "02a64b8993f33b2ebd37a4de1c9441f491291a4e779da8e519bcfb7c1f3f56c9c0",
   "payment_count": 6,
   "payment_hash_digest": "7fa5f65c994e6920d62f22319ff553afb0261915a3783b30ea3c151dd2f2cf1e",

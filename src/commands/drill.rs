@@ -35,9 +35,15 @@ pub struct InventoryComparison {
     pub source_channel_count: Option<u32>,
     pub restored_channel_count: Option<u32>,
     pub channel_count_match: bool,
+    pub source_channel_state_distribution: Option<HashMap<String, u32>>,
+    pub restored_channel_state_distribution: Option<HashMap<String, u32>>,
+    pub channel_state_distribution_match: Option<bool>,
     pub source_payment_count: Option<u32>,
     pub restored_payment_count: Option<u32>,
     pub payment_count_match: bool,
+    pub source_payment_status_distribution: Option<HashMap<String, u32>>,
+    pub restored_payment_status_distribution: Option<HashMap<String, u32>>,
+    pub payment_status_distribution_match: Option<bool>,
     pub source_channel_id_digest: Option<String>,
     pub restored_channel_id_digest: Option<String>,
     pub channel_id_digest_match: Option<bool>,
@@ -103,6 +109,7 @@ pub struct DrillReport {
     pub payment_inventory: String,
     pub payment_state_equivalence: String,
     pub inventory_comparison: InventoryComparison,
+    pub recovery_point_immutable: String,
     pub source_state_immutable: String,
     pub network_isolation: String,
     pub fiber_p2p_egress: String,
@@ -369,10 +376,16 @@ impl DrillCommand {
         let channel_match = inventory_comparison.channel_count_match
             && inventory_comparison
                 .channel_id_digest_match
+                .unwrap_or(false)
+            && inventory_comparison
+                .channel_state_distribution_match
                 .unwrap_or(false);
         let payment_match = inventory_comparison.payment_count_match
             && inventory_comparison
                 .payment_hash_digest_match
+                .unwrap_or(false)
+            && inventory_comparison
+                .payment_status_distribution_match
                 .unwrap_or(false);
 
         let safety_invariants = SafetyInvariantsReport::evaluate(
@@ -803,9 +816,15 @@ impl DrillCommand {
                 source_channel_count: None,
                 restored_channel_count: None,
                 channel_count_match: false,
+                source_channel_state_distribution: None,
+                restored_channel_state_distribution: None,
+                channel_state_distribution_match: None,
                 source_payment_count: None,
                 restored_payment_count: None,
                 payment_count_match: false,
+                source_payment_status_distribution: None,
+                restored_payment_status_distribution: None,
+                payment_status_distribution_match: None,
                 source_channel_id_digest: None,
                 restored_channel_id_digest: None,
                 channel_id_digest_match: None,
@@ -824,9 +843,15 @@ impl DrillCommand {
                 source_channel_count: m.channel_count,
                 restored_channel_count: None,
                 channel_count_match: false,
+                source_channel_state_distribution: m.channel_state_distribution.clone(),
+                restored_channel_state_distribution: None,
+                channel_state_distribution_match: None,
                 source_payment_count: m.payment_count,
                 restored_payment_count: None,
                 payment_count_match: false,
+                source_payment_status_distribution: m.payment_status_distribution.clone(),
+                restored_payment_status_distribution: None,
+                payment_status_distribution_match: None,
                 source_channel_id_digest: m.channel_id_digest.clone(),
                 restored_channel_id_digest: None,
                 channel_id_digest_match: None,
@@ -855,12 +880,38 @@ impl DrillCommand {
             _ => false,
         };
 
+        let source_channel_state_distribution = m.channel_state_distribution.clone();
+        let restored_channel_state_distribution =
+            Some(restored_inv.channel_state_distribution.clone());
+        let channel_state_distribution_match = match (
+            &source_channel_state_distribution,
+            &restored_channel_state_distribution,
+        ) {
+            (Some(src), Some(rst)) => Some(src == rst),
+            (None, None) => Some(true),
+            (None, Some(rst)) if rst.is_empty() => Some(true),
+            _ => Some(false),
+        };
+
         let source_payment_count = m.payment_count;
         let restored_payment_count = Some(restored_inv.payment_count as u32);
         let payment_count_match = match (source_payment_count, restored_payment_count) {
             (Some(src), Some(rst)) => src == rst,
             (None, Some(0)) => true,
             _ => false,
+        };
+
+        let source_payment_status_distribution = m.payment_status_distribution.clone();
+        let restored_payment_status_distribution =
+            Some(restored_inv.payment_status_distribution.clone());
+        let payment_status_distribution_match = match (
+            &source_payment_status_distribution,
+            &restored_payment_status_distribution,
+        ) {
+            (Some(src), Some(rst)) => Some(src == rst),
+            (None, None) => Some(true),
+            (None, Some(rst)) if rst.is_empty() => Some(true),
+            _ => Some(false),
         };
 
         let source_channel_id_digest = m.channel_id_digest.clone();
@@ -885,17 +936,25 @@ impl DrillCommand {
             && execution.check_validate_passed
             && channel_count_match
             && channel_id_digest_match.unwrap_or(false)
+            && channel_state_distribution_match.unwrap_or(false)
             && payment_count_match
-            && payment_hash_digest_match.unwrap_or(false);
+            && payment_hash_digest_match.unwrap_or(false)
+            && payment_status_distribution_match.unwrap_or(false);
 
         InventoryComparison {
             comparison_method: "LIVE_RESTORED_NODE_RPC_QUERY".to_string(),
             source_channel_count,
             restored_channel_count,
             channel_count_match,
+            source_channel_state_distribution,
+            restored_channel_state_distribution,
+            channel_state_distribution_match,
             source_payment_count,
             restored_payment_count,
             payment_count_match,
+            source_payment_status_distribution,
+            restored_payment_status_distribution,
+            payment_status_distribution_match,
             source_channel_id_digest,
             restored_channel_id_digest,
             channel_id_digest_match,
@@ -907,15 +966,19 @@ impl DrillCommand {
             note: format!(
                 "Live restored node successfully started and queried via JSON-RPC. \
                  Channel count match: {} (source: {:?}, restored: {:?}). \
+                 Channel state distribution match: {:?}. \
                  Payment count match: {} (source: {:?}, restored: {:?}). \
+                 Payment status distribution match: {:?}. \
                  Channel ID digest match: {:?}. Payment hash digest match: {:?}. \
                  Identity match: {}.",
                 channel_count_match,
                 source_channel_count,
                 restored_channel_count,
+                channel_state_distribution_match,
                 payment_count_match,
                 source_payment_count,
                 restored_payment_count,
+                payment_status_distribution_match,
                 channel_id_digest_match,
                 payment_hash_digest_match,
                 identity_match
@@ -1039,6 +1102,9 @@ impl DrillCommand {
                 && inventory_comparison
                     .channel_id_digest_match
                     .unwrap_or(false)
+                && inventory_comparison
+                    .channel_state_distribution_match
+                    .unwrap_or(false)
             {
                 "PASS".to_string()
             } else {
@@ -1049,12 +1115,20 @@ impl DrillCommand {
                 && inventory_comparison
                     .payment_hash_digest_match
                     .unwrap_or(false)
+                && inventory_comparison
+                    .payment_status_distribution_match
+                    .unwrap_or(false)
             {
                 "PASS".to_string()
             } else {
                 "FAIL".to_string()
             },
             inventory_comparison: inventory_comparison.clone(),
+            recovery_point_immutable: if source_immutable {
+                "PASS".to_string()
+            } else {
+                "FAIL".to_string()
+            },
             source_state_immutable: if source_immutable {
                 "PASS".to_string()
             } else {
@@ -1185,8 +1259,8 @@ impl DrillCommand {
             "2. MACHINE-ENFORCED INVARIANTS (I1 - I7)".bold().white()
         );
         println!(
-            "  [I1] Source Immutability:     {}",
-            report.safety_invariants.source_state_immutable
+            "  [I1] Recovery-Point Immutability: {}",
+            report.safety_invariants.recovery_point_immutable
         );
         println!(
             "  [I2] Identity Equivalence:    {}",
@@ -1529,35 +1603,69 @@ impl DrillCommand {
     }
 
     /// Collects known secret values (private keys, passwords, tokens) in raw, hex, and base64 forms.
+    /// Scans both root-level (key, sk) and subdirectory (ckb/key, fiber/sk) backup layouts.
     #[allow(clippy::collapsible_if)]
-    fn collect_known_secrets(backup_dir: &Path) -> Vec<String> {
+    pub fn collect_known_secrets(backup_dir: &Path) -> Vec<String> {
         let mut secrets = Vec::new();
 
-        // 1. Check ckb/key
-        let ckb_key_path = backup_dir.join("ckb").join("key");
-        if let Ok(key_str) = fs::read_to_string(&ckb_key_path) {
-            let trimmed = key_str.trim().to_string();
-            if !trimmed.is_empty() && !trimmed.chars().all(|c| c == '0') {
-                secrets.push(trimmed.clone());
-                if let Ok(raw_bytes) = hex::decode(&trimmed) {
-                    secrets.push(to_base64(&raw_bytes));
+        // 1. Check root-level key and ckb/key
+        for key_path in [backup_dir.join("key"), backup_dir.join("ckb").join("key")] {
+            if let Ok(key_str) = fs::read_to_string(&key_path) {
+                let trimmed = key_str.trim().to_string();
+                if !trimmed.is_empty() && !trimmed.chars().all(|c| c == '0') {
+                    if !secrets.contains(&trimmed) {
+                        secrets.push(trimmed.clone());
+                    }
+                    if let Ok(raw_bytes) = hex::decode(&trimmed) {
+                        let b64 = to_base64(&raw_bytes);
+                        if !secrets.contains(&b64) {
+                            secrets.push(b64);
+                        }
+                    }
+                }
+            } else if let Ok(key_bytes) = fs::read(&key_path) {
+                if !key_bytes.is_empty() && key_bytes.iter().any(|&b| b != 0) {
+                    let hex_s = hex::encode(&key_bytes);
+                    let b64 = to_base64(&key_bytes);
+                    if !secrets.contains(&hex_s) {
+                        secrets.push(hex_s);
+                    }
+                    if !secrets.contains(&b64) {
+                        secrets.push(b64);
+                    }
                 }
             }
         }
 
-        // 2. Check fiber/sk
-        let fiber_sk_path = backup_dir.join("fiber").join("sk");
-        if let Ok(sk_bytes) = fs::read(&fiber_sk_path) {
-            if !sk_bytes.is_empty() && sk_bytes.iter().any(|&b| b != 0) {
-                secrets.push(hex::encode(&sk_bytes));
-                secrets.push(to_base64(&sk_bytes));
+        // 2. Check root-level sk and fiber/sk
+        for sk_path in [backup_dir.join("sk"), backup_dir.join("fiber").join("sk")] {
+            if let Ok(sk_bytes) = fs::read(&sk_path) {
+                if !sk_bytes.is_empty() && sk_bytes.iter().any(|&b| b != 0) {
+                    let hex_s = hex::encode(&sk_bytes);
+                    let b64 = to_base64(&sk_bytes);
+                    if !secrets.contains(&hex_s) {
+                        secrets.push(hex_s);
+                    }
+                    if !secrets.contains(&b64) {
+                        secrets.push(b64);
+                    }
+                    if let Ok(utf8_s) = std::str::from_utf8(&sk_bytes) {
+                        let trimmed = utf8_s.trim().to_string();
+                        if !trimmed.is_empty() && !secrets.contains(&trimmed) {
+                            secrets.push(trimmed);
+                        }
+                    }
+                }
             }
         }
 
         // 3. FIBER_SECRET_KEY_PASSWORD from env
         if let Ok(pass) = std::env::var("FIBER_SECRET_KEY_PASSWORD") {
             let trimmed = pass.trim().to_string();
-            if !trimmed.is_empty() && trimmed != "safeguard_ephemeral_drill_key" {
+            if !trimmed.is_empty()
+                && trimmed != "safeguard_ephemeral_drill_key"
+                && !secrets.contains(&trimmed)
+            {
                 secrets.push(trimmed);
             }
         }
@@ -1567,7 +1675,7 @@ impl DrillCommand {
 
     /// Runs hardened secret scan across ALL evidence files in evidence_dir.
     /// Checks known secrets (raw, hex, base64) and generic private key/token patterns.
-    fn run_secret_scan(
+    pub fn run_secret_scan(
         evidence_dir: &Path,
         known_secrets: &[String],
     ) -> Result<(usize, Vec<String>)> {

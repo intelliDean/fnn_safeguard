@@ -60,7 +60,10 @@ impl std::fmt::Display for InvariantStatus {
 /// Machine-readable report of all machine-enforced safety invariants (I1 - I8).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SafetyInvariantsReport {
-    /// I1: Source immutability — live/source directory must never be modified by a drill.
+    /// I1: Recovery-Point Immutability — backup directory must never be modified by a drill.
+    pub recovery_point_immutable: InvariantStatus,
+
+    /// Compatibility field matching previous label (kept identical to recovery_point_immutable).
     pub source_state_immutable: InvariantStatus,
 
     /// Backup structure validity — complete database, CKB key, Fiber key, non-empty.
@@ -117,11 +120,12 @@ impl SafetyInvariantsReport {
         isolation_status: InvariantStatus,
         secrets_detected: usize,
     ) -> Self {
-        let source_state_immutable = if source_immutable {
+        let recovery_point_immutable = if source_immutable {
             InvariantStatus::Pass
         } else {
             InvariantStatus::Fail
         };
+        let source_state_immutable = recovery_point_immutable;
         let backup_structure_valid = if backup_valid {
             InvariantStatus::Pass
         } else {
@@ -161,7 +165,9 @@ impl SafetyInvariantsReport {
         // Fail-closed checks:
         let mut fail_reasons = Vec::new();
         if !source_immutable {
-            fail_reasons.push("I1 violated: Source directory was mutated during drill execution");
+            fail_reasons.push(
+                "I1 violated: Recovery-point backup directory was mutated during drill execution",
+            );
         }
         if !backup_valid {
             fail_reasons.push("Backup structure is invalid or missing required components");
@@ -239,6 +245,7 @@ impl SafetyInvariantsReport {
         };
 
         Self {
+            recovery_point_immutable,
             source_state_immutable,
             backup_structure_valid,
             manifest_integrity,

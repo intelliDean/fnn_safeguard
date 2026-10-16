@@ -175,6 +175,58 @@ fn test_secret_leaked_yields_failed() {
 }
 
 #[test]
+fn test_known_secret_in_evidence_directory_fails_scan_and_invariant() {
+    use fnn_safeguard::commands::drill::DrillCommand;
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let evidence_dir = temp.path().join("evidence");
+    std::fs::create_dir_all(&evidence_dir).unwrap();
+
+    let backup_dir = temp.path().join("backup");
+    std::fs::create_dir_all(&backup_dir).unwrap();
+
+    // Write root-level key and sk into backup_dir
+    let secret_key_hex = "4c6140482649cfd35b6fb300da6bad26e734dc71ed67050ff808d9ab23f71319";
+    std::fs::write(backup_dir.join("key"), secret_key_hex).unwrap();
+    std::fs::write(backup_dir.join("sk"), [0x42u8; 32]).unwrap();
+
+    // Collect secrets from backup
+    let known_secrets = DrillCommand::collect_known_secrets(&backup_dir);
+    assert!(!known_secrets.is_empty());
+    assert!(known_secrets.contains(&secret_key_hex.to_string()));
+
+    // Write an evidence file that accidentally leaks the hex secret
+    std::fs::write(
+        evidence_dir.join("leak-log.txt"),
+        format!("Debug dump: secret_key={}", secret_key_hex),
+    )
+    .unwrap();
+
+    let (secrets_detected, _scanned) =
+        DrillCommand::run_secret_scan(&evidence_dir, &known_secrets).unwrap();
+    assert!(secrets_detected > 0);
+
+    let report = SafetyInvariantsReport::evaluate(
+        true,
+        true,
+        true,
+        InvariantStatus::Pass,
+        InvariantStatus::NotAvailable,
+        true,
+        true,
+        true,
+        true,
+        InvariantStatus::Pass,
+        secrets_detected,
+    );
+
+    assert_eq!(report.final_verdict, RecoveryVerdict::Failed);
+    assert_eq!(report.secret_leakage, InvariantStatus::Fail);
+    assert!(report.verdict_reason.contains("Secret scanner detected"));
+}
+
+#[test]
 fn test_source_directory_mutation_yields_failed() {
     let report = SafetyInvariantsReport::evaluate(
         false, // source directory mutated!
@@ -191,6 +243,7 @@ fn test_source_directory_mutation_yields_failed() {
     );
 
     assert_eq!(report.final_verdict, RecoveryVerdict::Failed);
+    assert_eq!(report.recovery_point_immutable, InvariantStatus::Fail);
     assert_eq!(report.source_state_immutable, InvariantStatus::Fail);
     assert!(report.verdict_reason.contains("I1 violated"));
 }

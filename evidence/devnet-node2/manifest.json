@@ -1,7 +1,7 @@
 {
   "format_version": 1,
   "node_public_key": "02bcbd0e0d811d13363af1e5998f56e74e6aab8a7aa44005e1ce7d696a4d3f10f6",
-  "network": "testnet",
+  "network": "devnet/custom",
   "fnn_version": "0.9.0",
   "fnn_commit": "e6cb7ac 2026-08-06",
   "created_at": "2026-09-15T00:04:13.562Z",

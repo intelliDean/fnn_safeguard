@@ -19,7 +19,7 @@ async fn test_inspect_against_mock_fnn() {
             "pubkey": "03ab1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
             "node_name": "fiber-validator-01",
             "addresses": ["/ip4/127.0.0.1/tcp/8228"],
-            "chain_hash": "0x92b16a0e26815e04e7f331399415615f225626aa33719c0950dd2c0f016ddf67",
+            "chain_hash": "0x92b197aa1fba0f63633922c61c92375c9c074a93e85963554f5499fe1450d0e5",
             "channel_count": "0x2",
             "pending_channel_count": "0x0",
             "peers_count": "0x4"
